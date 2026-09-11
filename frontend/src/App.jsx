@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import {
   Volume2,
@@ -7,30 +7,125 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
-  Sliders,
   Languages,
   Mic,
-  Play,
   Download,
   Trash2,
-  Copy
+  Copy,
+  Check,
+  Gauge,
+  Music,
 } from 'lucide-react'
 
-function App() {
-  const [backendStatus, setBackendStatus] = useState('checking') // 'online' | 'offline' | 'checking'
-  const [text, setText] = useState('Hello! Welcome to the Text-to-Speech application. Convert your written text into natural-sounding speech.')
-  const [charLimit] = useState(1000)
+// Initial fallback voices while fetching from API
+const INITIAL_VOICES = [
+  {
+    id: 'en-US-JennyNeural',
+    name: 'Jenny (Female)',
+    gender: 'Female',
+    language: 'English (US)',
+  },
+  {
+    id: 'en-US-GuyNeural',
+    name: 'Guy (Male)',
+    gender: 'Male',
+    language: 'English (US)',
+  },
+  {
+    id: 'hi-IN-SwaraNeural',
+    name: 'Swara (Female)',
+    gender: 'Female',
+    language: 'Hindi (India)',
+  },
+  {
+    id: 'hi-IN-MadhurNeural',
+    name: 'Madhur (Male)',
+    gender: 'Male',
+    language: 'Hindi (India)',
+  },
+  {
+    id: 'gu-IN-DhwaniNeural',
+    name: 'Dhwani (Female)',
+    gender: 'Female',
+    language: 'Gujarati (India)',
+  },
+  {
+    id: 'mr-IN-AarohiNeural',
+    name: 'Aarohi (Female)',
+    gender: 'Female',
+    language: 'Marathi (India)',
+  },
+  {
+    id: 'es-ES-ElviraNeural',
+    name: 'Elvira (Female)',
+    gender: 'Female',
+    language: 'Spanish (Spain)',
+  },
+  {
+    id: 'fr-FR-DeniseNeural',
+    name: 'Denise (Female)',
+    gender: 'Female',
+    language: 'French (France)',
+  },
+  {
+    id: 'de-DE-KatjaNeural',
+    name: 'Katja (Female)',
+    gender: 'Female',
+    language: 'German (Germany)',
+  },
+]
 
-  // Character and word count
+const SPEED_OPTIONS = [
+  { label: '0.75x (Slower)', rate: '-25%' },
+  { label: '1.0x (Normal)', rate: '+0%' },
+  { label: '1.25x (Faster)', rate: '+25%' },
+  { label: '1.5x (Fast)', rate: '+50%' },
+]
+
+function App() {
+  const [backendStatus, setBackendStatus] = useState('checking')
+  const [text, setText] = useState(
+    'Hello! Welcome to the Text-to-Speech application. Convert your written text into natural-sounding speech.'
+  )
+  const charLimit = 1000
+
+  // Voice and language states
+  const [languages, setLanguages] = useState([
+    'English (US)',
+    'Hindi (India)',
+    'Gujarati (India)',
+    'Marathi (India)',
+    'Spanish (Spain)',
+    'French (France)',
+    'German (Germany)',
+  ])
+  const [allVoices, setAllVoices] = useState(INITIAL_VOICES)
+  const [selectedLanguage, setSelectedLanguage] = useState('English (US)')
+  const [selectedVoice, setSelectedVoice] = useState('en-US-JennyNeural')
+  const [selectedSpeed, setSelectedSpeed] = useState('+0%')
+
+  // Audio generation states
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generatedAudio, setGeneratedAudio] = useState(null)
+  const [errorMessage, setErrorMessage] = useState(null)
+  const [copied, setCopied] = useState(false)
+
+  const audioRef = useRef(null)
+
+  // Character and word counts
   const charCount = text.length
   const wordCount = text.trim() === '' ? 0 : text.trim().split(/\s+/).length
 
+  // Filter voices for current language
+  const availableVoices = allVoices.filter(
+    (voice) => voice.language === selectedLanguage
+  )
+
   // Check backend health
   const checkHealth = async () => {
-    setBackendStatus('checking')
     try {
       const response = await axios.get('/api/health', { timeout: 3000 })
-      if (response.data && response.data.status === 'ok') {
+      if (response.data?.status === 'ok') {
         setBackendStatus('online')
       } else {
         setBackendStatus('offline')
@@ -40,99 +135,186 @@ function App() {
     }
   }
 
+  // Fetch supported voices list
+  const fetchVoices = async () => {
+    try {
+      const response = await axios.get('/api/voices', { timeout: 3500 })
+      if (response.data?.voices) {
+        setAllVoices(response.data.voices)
+      }
+      if (response.data?.languages) {
+        setLanguages(response.data.languages)
+      }
+    } catch {
+      // Retain fallback voices if offline
+    }
+  }
+
+  const handleRefresh = () => {
+    setBackendStatus('checking')
+    checkHealth()
+    fetchVoices()
+  }
+
   useEffect(() => {
     checkHealth()
+    fetchVoices()
   }, [])
+
+  // Switch voice when language changes
+  const handleLanguageChange = (e) => {
+    const nextLang = e.target.value
+    setSelectedLanguage(nextLang)
+
+    const matching = allVoices.filter((v) => v.language === nextLang)
+    if (matching.length > 0) {
+      setSelectedVoice(matching[0].id)
+    }
+  }
+
+  // Trigger speech synthesis
+  const handleGenerate = async () => {
+    const input = text.trim()
+    if (!input) {
+      setErrorMessage('Please enter some text to generate speech.')
+      return
+    }
+
+    setIsGenerating(true)
+    setErrorMessage(null)
+
+    try {
+      const res = await axios.post('/api/tts', {
+        text: input,
+        language: selectedLanguage,
+        voice: selectedVoice,
+        rate: selectedSpeed,
+        pitch: '+0Hz',
+        volume: '+0%',
+      })
+
+      setGeneratedAudio(res.data)
+
+      // Play audio automatically if permitted
+      setTimeout(() => {
+        if (audioRef.current) {
+          audioRef.current.load()
+          audioRef.current.play().catch(() => {})
+        }
+      }, 100)
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Failed to generate audio. Check backend connection.'
+      setErrorMessage(msg)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  // Copy audio direct URL
+  const handleCopy = () => {
+    if (!generatedAudio) return
+    const url = `${window.location.origin}${generatedAudio.audio_url}`
+    navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center py-10 px-4 sm:px-6">
-      {/* Container */}
       <div className="w-full max-w-3xl space-y-8">
-        
+
         {/* Header */}
         <header className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold tracking-wider uppercase">
             <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
             Full-Stack Speech Synthesis
           </div>
+
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-400 bg-clip-text text-transparent">
             Text to Speech Application
           </h1>
+
           <p className="text-sm text-slate-400 max-w-lg mx-auto">
-            Convert written text into natural-sounding speech across multiple languages and voices with instant playback and export.
+            Convert written text into natural-sounding speech across multiple languages with instant playback and export.
           </p>
         </header>
 
-        {/* System Health Status Bar (Day 1 Feature) */}
+        {/* Health status banner */}
         <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 px-4 flex items-center justify-between text-sm backdrop-blur">
           <div className="flex items-center gap-2">
             <Server className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-400">Backend API Status:</span>
+            <span className="text-slate-400">Backend API:</span>
+
             {backendStatus === 'online' && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                Online (FastAPI :8000)
+                Online
               </span>
             )}
+
             {backendStatus === 'offline' && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
                 <AlertCircle className="w-3.5 h-3.5" />
-                Backend Offline (Start Uvicorn)
+                Offline
               </span>
             )}
+
             {backendStatus === 'checking' && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
                 <RefreshCw className="w-3 h-3 animate-spin" />
-                Checking /api/health...
+                Checking...
               </span>
             )}
           </div>
+
           <button
-            onClick={checkHealth}
-            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition"
+            onClick={handleRefresh}
+            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition cursor-pointer"
           >
             <RefreshCw className="w-3 h-3" />
             Refresh
           </button>
         </div>
 
-        {/* Main Card */}
+        {/* Main card */}
         <main className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
-          
-          {/* Text Input Section */}
+
+          {/* Text input */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label htmlFor="tts-text" className="text-sm font-semibold text-slate-200">
-                Enter your text
+                Enter text
               </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setText('')}
-                  className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1 transition"
-                  title="Clear text"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  Clear
-                </button>
-              </div>
+
+              <button
+                type="button"
+                onClick={() => setText('')}
+                className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1 transition cursor-pointer"
+                title="Clear input"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
             </div>
 
-            <div className="relative">
-              <textarea
-                id="tts-text"
-                rows={5}
-                value={text}
-                maxLength={charLimit}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Type or paste text here to convert into speech..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-y"
-              />
-            </div>
+            <textarea
+              id="tts-text"
+              rows={5}
+              value={text}
+              maxLength={charLimit}
+              onChange={(e) => {
+                setText(e.target.value)
+                if (errorMessage) setErrorMessage(null)
+              }}
+              placeholder="Type or paste your text here..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-y"
+            />
 
-            {/* Character and Word Counter */}
             <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-              <span>Words: <strong className="text-slate-200">{wordCount}</strong></span>
+              <span>
+                Words: <strong className="text-slate-200">{wordCount}</strong>
+              </span>
+
               <span>
                 Characters:{' '}
                 <strong className={charCount > charLimit * 0.9 ? 'text-amber-400' : 'text-slate-200'}>
@@ -143,75 +325,189 @@ function App() {
             </div>
           </div>
 
-          {/* Configuration Grid: Language & Voice Selectors */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Language Selection */}
+          {/* Controls: Language, Voice, and Speed */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+            {/* Language */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <Languages className="w-3.5 h-3.5 text-indigo-400" />
                 Language
               </label>
+
               <select
-                disabled
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-300 focus:outline-none cursor-not-allowed opacity-80"
+                value={selectedLanguage}
+                onChange={handleLanguageChange}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
               >
-                <option>English (US)</option>
-                <option>Hindi (India)</option>
-                <option>Gujarati (India)</option>
-                <option>Marathi (India)</option>
-                <option>Spanish (Spain)</option>
-                <option>French (France)</option>
-                <option>German (Germany)</option>
+                {languages.map((lang) => (
+                  <option key={lang} value={lang} className="bg-slate-950 text-slate-200">
+                    {lang}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {/* Voice Selection */}
+            {/* Voice */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-indigo-400" />
                 Voice
               </label>
+
               <select
-                disabled
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-300 focus:outline-none cursor-not-allowed opacity-80"
+                value={selectedVoice}
+                onChange={(e) => setSelectedVoice(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
               >
-                <option>Jenny (Female - Neural)</option>
-                <option>Guy (Male - Neural)</option>
+                {availableVoices.map((v) => (
+                  <option key={v.id} value={v.id} className="bg-slate-950 text-slate-200">
+                    {v.name}
+                  </option>
+                ))}
               </select>
             </div>
+
+            {/* Speed */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <Gauge className="w-3.5 h-3.5 text-indigo-400" />
+                Speed
+              </label>
+
+              <select
+                value={selectedSpeed}
+                onChange={(e) => setSelectedSpeed(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                {SPEED_OPTIONS.map((opt) => (
+                  <option key={opt.rate} value={opt.rate} className="bg-slate-950 text-slate-200">
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
           </div>
 
-          {/* Action Button */}
+          {/* Error notice */}
+          {errorMessage && (
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Submit action */}
           <div>
             <button
-              disabled
-              className="w-full py-3 px-4 rounded-xl bg-indigo-600/70 hover:bg-indigo-600 text-white font-medium text-sm flex items-center justify-center gap-2 cursor-not-allowed transition shadow-lg shadow-indigo-600/20"
+              onClick={handleGenerate}
+              disabled={isGenerating || text.trim() === ''}
+              className={`w-full py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition ${
+                isGenerating || text.trim() === ''
+                  ? 'bg-indigo-600/40 text-slate-400 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-lg shadow-indigo-600/20 active:scale-[0.99]'
+              }`}
             >
-              <Volume2 className="w-4 h-4" />
-              Generate Speech (Available Day 2)
+              {isGenerating ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Generating audio...
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-4 h-4" />
+                  Generate Speech
+                </>
+              )}
             </button>
           </div>
 
-          {/* Generated Audio Placeholder */}
-          <div className="border-t border-slate-800/80 pt-6 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Generated Audio
-            </h3>
-            <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-xl p-6 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
-              <Volume2 className="w-6 h-6 text-slate-600" />
-              <span>Audio player will appear here after synthesis is triggered.</span>
+          {/* Audio player / output card */}
+          <div className="border-t border-slate-800/80 pt-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Music className="w-3.5 h-3.5 text-indigo-400" />
+                Audio Output
+              </h3>
+
+              {generatedAudio && (
+                <span className="text-[11px] text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  Ready
+                </span>
+              )}
             </div>
+
+            {generatedAudio ? (
+              <div className="bg-slate-950/80 border border-indigo-500/20 rounded-xl p-4 space-y-3">
+                <audio
+                  ref={audioRef}
+                  controls
+                  className="w-full h-10 rounded-lg focus:outline-none"
+                  src={generatedAudio.audio_url}
+                >
+                  Your browser does not support audio playback.
+                </audio>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60 text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span>Voice: <strong className="text-slate-200">{generatedAudio.voice}</strong></span>
+                    <span>•</span>
+                    <span>{generatedAudio.char_count} chars</span>
+                    <span>•</span>
+                    <span>{generatedAudio.word_count} words</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopy}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+                      title="Copy direct audio URL"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Link</span>
+                        </>
+                      )}
+                    </button>
+
+                    <a
+                      href={generatedAudio.audio_url}
+                      download={generatedAudio.filename}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
+                <Volume2 className="w-7 h-7 text-slate-600" />
+                <span className="text-slate-400">No audio generated yet</span>
+                <span className="text-xs text-slate-500">
+                  Select your voice and click "Generate Speech" above.
+                </span>
+              </div>
+            )}
           </div>
 
         </main>
 
-        {/* Day 1 Milestone Card */}
+        {/* Footer */}
         <footer className="text-center text-xs text-slate-500 space-y-1">
           <p>
-            Text-to-Speech Application • Project Submission Deadline: <strong>Sept 20, 2026</strong>
+            Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
           <p className="text-slate-600">
-            Day 1 Architecture & Scaffold completed: Git, FastAPI, Pydantic, Vite React & Tailwind CSS.
+            FastAPI, Neural Edge-TTS, Vite, React & Tailwind CSS.
           </p>
         </footer>
 

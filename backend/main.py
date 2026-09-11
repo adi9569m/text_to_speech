@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-# Load environment variables
+from backend.routers import tts
+
 load_dotenv()
 
 app = FastAPI(
@@ -13,12 +14,15 @@ app = FastAPI(
     description="Full-stack Text-to-Speech Application API powered by FastAPI and Neural TTS",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
-# Configure CORS
-origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-origins = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+# CORS setup
+allowed_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
+origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,22 +32,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure audio storage directory exists
+# Audio file storage setup
 BASE_DIR = Path(__file__).resolve().parent
 AUDIO_DIR = BASE_DIR / os.getenv("AUDIO_OUTPUT_DIR", "generated_audio")
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mount static audio files
 app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
+
+# Register feature routers
+app.include_router(tts.router, prefix="/api", tags=["TTS"])
 
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
-    """
-    Health check endpoint to verify backend server status.
-    Returns:
-        JSON response with {"status": "ok"}
-    """
     return {"status": "ok"}
 
 

@@ -29,3 +29,7 @@ backend/generated_audio/*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Project specification documents
+*.pdf
+Python -Text-to-Speech Application.pdf
