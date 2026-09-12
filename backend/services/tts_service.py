@@ -138,6 +138,13 @@ class TTSService:
         }
 
     @staticmethod
+    def get_language_for_voice(voice_id: str) -> str:
+        for voice in CURATED_VOICES:
+            if voice["id"] == voice_id:
+                return voice["language"]
+        return "English (US)"
+
+    @staticmethod
     async def synthesize(
         text: str,
         voice: str = "en-US-JennyNeural",

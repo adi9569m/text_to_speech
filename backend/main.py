@@ -5,7 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-from backend.routers import tts
+from backend.models.database import Base, engine
+from backend.routers import tts, history
+
+# Initialize SQLite database tables (Day 3 feature)
+Base.metadata.create_all(bind=engine)
 
 load_dotenv()
 
@@ -41,6 +45,7 @@ app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
 
 # Register feature routers
 app.include_router(tts.router, prefix="/api", tags=["TTS"])
+app.include_router(history.router, prefix="/api", tags=["History"])
 
 
 @app.get("/api/health", tags=["Health"])

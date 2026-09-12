@@ -1,6 +1,9 @@
 import logging
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
+from backend.models.database import get_db
+from backend.models.history import AudioHistory
 from backend.schemas.tts import (
     TTSGenerateRequest,
     TTSGenerateResponse,
@@ -11,6 +14,7 @@ from backend.services.tts_service import TTSService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 
 @router.get(
@@ -44,15 +48,35 @@ async def get_voices():
     response_model=TTSGenerateResponse,
     include_in_schema=False,
 )
-async def generate_speech(payload: TTSGenerateRequest):
+async def generate_speech(
+    payload: TTSGenerateRequest,
+    db: Session = Depends(get_db),
+):
     try:
-        return await TTSService.synthesize(
+        result = await TTSService.synthesize(
             text=payload.text,
             voice=payload.voice,
             rate=payload.rate,
             pitch=payload.pitch,
             volume=payload.volume,
         )
+
+        # Persist to database history (Day 3 feature)
+        try:
+            resolved_lang = payload.language or TTSService.get_language_for_voice(payload.voice)
+            history_record = AudioHistory(
+                text=payload.text.strip(),
+                language=resolved_lang,
+                voice=payload.voice,
+                audio_url=result["audio_url"],
+            )
+            db.add(history_record)
+            db.commit()
+        except Exception as db_exc:
+            logger.warning(f"Could not persist history record: {db_exc}")
+            db.rollback()
+
+        return result
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
