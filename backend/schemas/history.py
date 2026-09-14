@@ -9,6 +9,7 @@ class AudioHistoryItem(BaseModel):
     language: Optional[str] = None
     voice: str
     audio_url: str
+    is_favorite: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -22,3 +23,11 @@ class AudioHistoryList(BaseModel):
 class HistoryDeleteResponse(BaseModel):
     success: bool
     message: str
+
+
+class HistoryFavoriteResponse(BaseModel):
+    success: bool = True
+    id: int
+    is_favorite: bool
+    message: str
+

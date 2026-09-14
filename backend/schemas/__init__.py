@@ -8,6 +8,7 @@ from backend.schemas.history import (
     AudioHistoryItem,
     AudioHistoryList,
     HistoryDeleteResponse,
+    HistoryFavoriteResponse,
 )
 
 __all__ = [
@@ -18,4 +19,6 @@ __all__ = [
     "AudioHistoryItem",
     "AudioHistoryList",
     "HistoryDeleteResponse",
+    "HistoryFavoriteResponse",
 ]
+

@@ -94,3 +94,42 @@ def test_clear_all_history():
     data = history_res.json()
     assert data["total"] == 0
     assert len(data["items"]) == 0
+
+
+def test_toggle_history_favorite():
+    """Verify toggling favorite status and filtering by favorites (Day 5 feature)."""
+    # 1. Generate speech
+    payload = {
+        "text": "Favorite item test for Day 5.",
+        "language": "English (US)",
+        "voice": "en-US-JennyNeural",
+    }
+    gen_res = client.post("/api/tts", json=payload)
+    assert gen_res.status_code == 200
+
+    # 2. Get the new item
+    history_res = client.get("/api/history")
+    items = history_res.json()["items"]
+    target = items[0]
+    assert target["is_favorite"] is False
+
+    # 3. Toggle favorite ON
+    fav_res = client.patch(f"/api/history/{target['id']}/favorite")
+    assert fav_res.status_code == 200
+    assert fav_res.json()["is_favorite"] is True
+
+    # 4. Verify in history query with favorite_only=True
+    fav_query_res = client.get("/api/history?favorite_only=true")
+    assert fav_query_res.status_code == 200
+    fav_items = fav_query_res.json()["items"]
+    assert any(i["id"] == target["id"] for i in fav_items)
+
+    # 5. Toggle favorite OFF
+    unfav_res = client.patch(f"/api/history/{target['id']}/favorite")
+    assert unfav_res.status_code == 200
+    assert unfav_res.json()["is_favorite"] is False
+
+    # 6. Verify 404 for invalid ID
+    inv_res = client.patch("/api/history/999999/favorite")
+    assert inv_res.status_code == 404
+

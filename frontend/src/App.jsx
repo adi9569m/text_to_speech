@@ -18,6 +18,9 @@ import {
   History,
   Clock,
   RotateCcw,
+  Star,
+  SlidersHorizontal,
+  Volume1,
 } from 'lucide-react'
 
 // Initial fallback voices while fetching from API
@@ -85,6 +88,22 @@ const SPEED_OPTIONS = [
   { label: '1.5x (Fast)', rate: '+50%' },
 ]
 
+const PITCH_OPTIONS = [
+  { label: '-20Hz (Lower)', value: '-20Hz' },
+  { label: '-10Hz (Low)', value: '-10Hz' },
+  { label: '+0Hz (Normal)', value: '+0Hz' },
+  { label: '+10Hz (High)', value: '+10Hz' },
+  { label: '+20Hz (Higher)', value: '+20Hz' },
+]
+
+const VOLUME_OPTIONS = [
+  { label: '50% (Soft)', value: '-50%' },
+  { label: '75% (Medium)', value: '-25%' },
+  { label: '100% (Normal)', value: '+0%' },
+  { label: '125% (Loud)', value: '+25%' },
+  { label: '150% (Max)', value: '+50%' },
+]
+
 function App() {
   const [backendStatus, setBackendStatus] = useState('checking')
   const [text, setText] = useState(
@@ -105,7 +124,21 @@ function App() {
   const [allVoices, setAllVoices] = useState(INITIAL_VOICES)
   const [selectedLanguage, setSelectedLanguage] = useState('English (US)')
   const [selectedVoice, setSelectedVoice] = useState('en-US-JennyNeural')
+
+  // Audio Customization states (Day 5 feature)
   const [selectedSpeed, setSelectedSpeed] = useState('+0%')
+  const [selectedPitch, setSelectedPitch] = useState('+0Hz')
+  const [selectedVolume, setSelectedVolume] = useState('+0%')
+
+  // Favorites states (Day 5 feature)
+  const [historyTab, setHistoryTab] = useState('all') // 'all' | 'favorites'
+  const [favoriteVoices, setFavoriteVoices] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('tts_favorite_voices') || '[]')
+    } catch {
+      return []
+    }
+  })
 
   // Audio generation states
   const [isGenerating, setIsGenerating] = useState(false)
@@ -226,6 +259,36 @@ function App() {
     setTimeout(() => setCopiedHistoryId(null), 2000)
   }
 
+  // Toggle favorite status of a voice (Day 5 feature)
+  const handleToggleFavoriteVoice = (voiceId) => {
+    setFavoriteVoices((prev) => {
+      const next = prev.includes(voiceId)
+        ? prev.filter((id) => id !== voiceId)
+        : [...prev, voiceId]
+      try {
+        localStorage.setItem('tts_favorite_voices', JSON.stringify(next))
+      } catch {
+        // Fallback if storage unavailable
+      }
+      return next
+    })
+  }
+
+  // Toggle favorite status of a history item (Day 5 feature)
+  const handleToggleFavoriteItem = async (id) => {
+    try {
+      setHistoryItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, is_favorite: !item.is_favorite } : item
+        )
+      )
+      await axios.patch(`/api/history/${id}/favorite`)
+    } catch {
+      setHistoryError('Could not update favorite status on server.')
+      fetchHistory()
+    }
+  }
+
   // Reuse history item text in the main input textarea (Day 4 feature)
   const handleUseHistoryText = (itemText) => {
     setText(itemText)
@@ -279,8 +342,8 @@ function App() {
         language: selectedLanguage,
         voice: selectedVoice,
         rate: selectedSpeed,
-        pitch: '+0Hz',
-        volume: '+0%',
+        pitch: selectedPitch,
+        volume: selectedVolume,
       })
 
       setGeneratedAudio(res.data)
@@ -418,69 +481,146 @@ function App() {
             </div>
           </div>
 
-          {/* Controls: Language, Voice, and Speed */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Controls: Language, Voice, and Audio Customization */}
+          <div className="space-y-4">
+            {/* Language and Voice Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Language */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Languages className="w-3.5 h-3.5 text-indigo-400" />
+                  Language
+                </label>
 
-            {/* Language */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Languages className="w-3.5 h-3.5 text-indigo-400" />
-                Language
-              </label>
+                <select
+                  value={selectedLanguage}
+                  onChange={handleLanguageChange}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {languages.map((lang) => (
+                    <option key={lang} value={lang} className="bg-slate-950 text-slate-200">
+                      {lang}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              <select
-                value={selectedLanguage}
-                onChange={handleLanguageChange}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-              >
-                {languages.map((lang) => (
-                  <option key={lang} value={lang} className="bg-slate-950 text-slate-200">
-                    {lang}
-                  </option>
-                ))}
-              </select>
+              {/* Voice with Favorite toggle (Day 5 feature) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-indigo-400" />
+                    Voice
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleFavoriteVoice(selectedVoice)}
+                    className={`text-xs flex items-center gap-1 px-1.5 py-0.5 rounded transition cursor-pointer ${
+                      favoriteVoices.includes(selectedVoice)
+                        ? 'text-amber-400 bg-amber-400/10 border border-amber-400/20'
+                        : 'text-slate-400 hover:text-amber-400'
+                    }`}
+                    title={
+                      favoriteVoices.includes(selectedVoice)
+                        ? 'Favorited voice (click to remove)'
+                        : 'Mark voice as favorite'
+                    }
+                  >
+                    <Star
+                      className={`w-3 h-3 ${
+                        favoriteVoices.includes(selectedVoice) ? 'fill-amber-400' : ''
+                      }`}
+                    />
+                    <span>
+                      {favoriteVoices.includes(selectedVoice) ? 'Favorited' : 'Favorite'}
+                    </span>
+                  </button>
+                </div>
+
+                <select
+                  value={selectedVoice}
+                  onChange={(e) => setSelectedVoice(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {availableVoices.map((v) => {
+                    const isFav = favoriteVoices.includes(v.id)
+                    return (
+                      <option key={v.id} value={v.id} className="bg-slate-950 text-slate-200">
+                        {isFav ? `★ ${v.name}` : v.name}
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
             </div>
 
-            {/* Voice */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Mic className="w-3.5 h-3.5 text-indigo-400" />
-                Voice
-              </label>
+            {/* Audio Customization: Speed, Pitch, Volume (Day 5 feature) */}
+            <div className="border-t border-slate-800/70 pt-3 space-y-2">
+              <div className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5 uppercase tracking-wider">
+                <SlidersHorizontal className="w-3 h-3 text-indigo-400" />
+                Audio Customization
+              </div>
 
-              <select
-                value={selectedVoice}
-                onChange={(e) => setSelectedVoice(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-              >
-                {availableVoices.map((v) => (
-                  <option key={v.id} value={v.id} className="bg-slate-950 text-slate-200">
-                    {v.name}
-                  </option>
-                ))}
-              </select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Speed */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                    <Gauge className="w-3 h-3 text-indigo-400" />
+                    Speed
+                  </label>
+                  <select
+                    value={selectedSpeed}
+                    onChange={(e) => setSelectedSpeed(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {SPEED_OPTIONS.map((opt) => (
+                      <option key={opt.rate} value={opt.rate} className="bg-slate-950 text-slate-200">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Pitch */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                    <SlidersHorizontal className="w-3 h-3 text-indigo-400" />
+                    Pitch
+                  </label>
+                  <select
+                    value={selectedPitch}
+                    onChange={(e) => setSelectedPitch(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {PITCH_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value} className="bg-slate-950 text-slate-200">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Volume */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                    <Volume1 className="w-3 h-3 text-indigo-400" />
+                    Volume
+                  </label>
+                  <select
+                    value={selectedVolume}
+                    onChange={(e) => setSelectedVolume(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {VOLUME_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value} className="bg-slate-950 text-slate-200">
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-
-            {/* Speed */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Gauge className="w-3.5 h-3.5 text-indigo-400" />
-                Speed
-              </label>
-
-              <select
-                value={selectedSpeed}
-                onChange={(e) => setSelectedSpeed(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-              >
-                {SPEED_OPTIONS.map((opt) => (
-                  <option key={opt.rate} value={opt.rate} className="bg-slate-950 text-slate-200">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
           </div>
 
           {/* Error notice */}
@@ -594,9 +734,9 @@ function App() {
 
         </main>
 
-        {/* Speech History Card (Day 4 Feature) */}
+        {/* Speech History Card (Day 4 & Day 5 Features) */}
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
                 <History className="w-5 h-5" />
@@ -614,16 +754,43 @@ function App() {
               </div>
             </div>
 
-            {historyItems.length > 0 && (
-              <button
-                onClick={handleClearHistory}
-                className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-rose-500/10 border border-rose-500/20 transition cursor-pointer"
-                title="Clear all audio history records"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear All
-              </button>
-            )}
+            {/* Filter Tabs and Clear Action (Day 5 feature) */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  onClick={() => setHistoryTab('all')}
+                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+                    historyTab === 'all'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  All ({historyItems.length})
+                </button>
+                <button
+                  onClick={() => setHistoryTab('favorites')}
+                  className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition cursor-pointer ${
+                    historyTab === 'favorites'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-400 hover:text-amber-400'
+                  }`}
+                >
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  Favorites ({historyItems.filter((i) => i.is_favorite).length})
+                </button>
+              </div>
+
+              {historyItems.length > 0 && (
+                <button
+                  onClick={handleClearHistory}
+                  className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-rose-500/10 border border-rose-500/20 transition cursor-pointer"
+                  title="Clear all audio history records"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Error banner for history actions */}
@@ -649,96 +816,142 @@ function App() {
                 Generated audio clips are automatically saved and will appear here.
               </span>
             </div>
+          ) : historyTab === 'favorites' &&
+            historyItems.filter((i) => i.is_favorite).length === 0 ? (
+            /* Empty favorites filter state */
+            <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
+              <Star className="w-7 h-7 text-slate-600" />
+              <span className="text-slate-400 font-medium">No favorite audio yet</span>
+              <span className="text-xs text-slate-500">
+                Click the star icon on any speech card to add it to your favorites.
+              </span>
+            </div>
           ) : (
             /* History list */
             <div className="space-y-4 max-h-[550px] overflow-y-auto pr-1">
-              {historyItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-slate-950/70 border border-slate-800/90 hover:border-slate-700/80 rounded-xl p-4 space-y-3 transition"
-                >
-                  {/* Top: Text snippet & delete */}
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm text-slate-200 leading-relaxed font-normal">
-                      &ldquo;{item.text}&rdquo;
-                    </p>
-                    <button
-                      onClick={() => handleDeleteHistoryItem(item.id)}
-                      className="text-slate-500 hover:text-rose-400 p-1 rounded-md hover:bg-slate-800/80 transition cursor-pointer shrink-0"
-                      title="Delete history item"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Badges and timestamp */}
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 font-medium border border-indigo-500/20">
-                      <Mic className="w-3 h-3 text-indigo-400" />
-                      {item.voice}
-                    </span>
-                    {item.language && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
-                        <Languages className="w-3 h-3 text-slate-400" />
-                        {item.language}
-                      </span>
-                    )}
-                    <span className="text-slate-500 flex items-center gap-1 text-[11px] ml-auto">
-                      <Clock className="w-3 h-3 text-slate-600" />
-                      {formatDate(item.created_at)}
-                    </span>
-                  </div>
-
-                  {/* Audio player */}
-                  <audio
-                    controls
-                    className="w-full h-9 rounded-lg focus:outline-none"
-                    src={item.audio_url}
-                    preload="none"
+              {historyItems
+                .filter((item) => (historyTab === 'favorites' ? item.is_favorite : true))
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className={`bg-slate-950/70 border rounded-xl p-4 space-y-3 transition ${
+                      item.is_favorite
+                        ? 'border-amber-500/30 hover:border-amber-500/50'
+                        : 'border-slate-800/90 hover:border-slate-700/80'
+                    }`}
                   >
-                    Your browser does not support audio playback.
-                  </audio>
+                    {/* Top: Text snippet & actions (Favorite + Delete) */}
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm text-slate-200 leading-relaxed font-normal">
+                        &ldquo;{item.text}&rdquo;
+                      </p>
 
-                  {/* Actions: Load Text, Copy Link, Download */}
-                  <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-900 text-xs">
-                    <button
-                      onClick={() => handleUseHistoryText(item.text)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
-                      title="Load this text into input"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Load Text</span>
-                    </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Favorite star toggle (Day 5 feature) */}
+                        <button
+                          onClick={() => handleToggleFavoriteItem(item.id)}
+                          className={`p-1.5 rounded-lg transition cursor-pointer ${
+                            item.is_favorite
+                              ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20'
+                              : 'text-slate-500 hover:text-amber-400 hover:bg-slate-800/80'
+                          }`}
+                          title={
+                            item.is_favorite
+                              ? 'Favorited (click to unfavorite)'
+                              : 'Mark as favorite'
+                          }
+                        >
+                          <Star
+                            className={`w-4 h-4 ${
+                              item.is_favorite ? 'fill-amber-400 text-amber-400' : ''
+                            }`}
+                          />
+                        </button>
 
-                    <button
-                      onClick={() => handleCopyHistoryUrl(item)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
-                      title="Copy direct audio URL"
-                    >
-                      {copiedHistoryId === item.id ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy Link</span>
-                        </>
+                        <button
+                          onClick={() => handleDeleteHistoryItem(item.id)}
+                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800/80 transition cursor-pointer"
+                          title="Delete history item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Badges and timestamp */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 font-medium border border-indigo-500/20">
+                        <Mic className="w-3 h-3 text-indigo-400" />
+                        {item.voice}
+                      </span>
+                      {item.language && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
+                          <Languages className="w-3 h-3 text-slate-400" />
+                          {item.language}
+                        </span>
                       )}
-                    </button>
+                      {item.is_favorite && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px]">
+                          <Star className="w-2.5 h-2.5 fill-amber-400" />
+                          Favorite
+                        </span>
+                      )}
+                      <span className="text-slate-500 flex items-center gap-1 text-[11px] ml-auto">
+                        <Clock className="w-3 h-3 text-slate-600" />
+                        {formatDate(item.created_at)}
+                      </span>
+                    </div>
 
-                    <a
-                      href={item.audio_url}
-                      download
-                      className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 transition cursor-pointer"
+                    {/* Audio player */}
+                    <audio
+                      controls
+                      className="w-full h-9 rounded-lg focus:outline-none"
+                      src={item.audio_url}
+                      preload="none"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download</span>
-                    </a>
+                      Your browser does not support audio playback.
+                    </audio>
+
+                    {/* Actions: Load Text, Copy Link, Download */}
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-900 text-xs">
+                      <button
+                        onClick={() => handleUseHistoryText(item.text)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+                        title="Load this text into input"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Load Text</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleCopyHistoryUrl(item)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+                        title="Copy direct audio URL"
+                      >
+                        {copiedHistoryId === item.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Link</span>
+                          </>
+                        )}
+                      </button>
+
+                      <a
+                        href={item.audio_url}
+                        download
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 transition cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download</span>
+                      </a>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </section>
@@ -749,7 +962,7 @@ function App() {
             Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
           <p className="text-slate-600">
-            Day 4 Completed: Speech History Frontend Integration & Text Validation.
+            Day 5 Completed: Favorites & Audio Customization.
           </p>
         </footer>
 

@@ -5,11 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-from backend.models.database import Base, engine
+from backend.models.database import Base, engine, init_db
 from backend.routers import tts, history
 
-# Initialize SQLite database tables (Day 3 feature)
-Base.metadata.create_all(bind=engine)
+# Initialize SQLite database tables and schema (Day 3 & Day 5 features)
+init_db()
 
 load_dotenv()
 

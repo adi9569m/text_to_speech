@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database file location in backend directory
@@ -20,6 +20,20 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def init_db():
+    """Initialize database tables and ensure Day 5 is_favorite column exists."""
+    Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        try:
+            res = conn.execute(text("PRAGMA table_info(audio_history)"))
+            columns = [row[1] for row in res.fetchall()]
+            if columns and "is_favorite" not in columns:
+                conn.execute(text("ALTER TABLE audio_history ADD COLUMN is_favorite BOOLEAN DEFAULT 0"))
+                conn.commit()
+        except Exception:
+            pass
+
+
 def get_db():
     """FastAPI dependency to provide a database session per request."""
     db = SessionLocal()
@@ -27,3 +41,4 @@ def get_db():
         yield db
     finally:
         db.close()
+
