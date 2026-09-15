@@ -194,7 +194,13 @@ function App() {
     try {
       const response = await axios.get('/api/health', { timeout: 3000 })
       if (response.data?.status === 'ok') {
-        setBackendStatus('online')
+        setBackendStatus((prev) => {
+          if (prev === 'offline') {
+            fetchVoices()
+            fetchHistory()
+          }
+          return 'online'
+        })
       } else {
         setBackendStatus('offline')
       }
@@ -392,6 +398,13 @@ function App() {
     checkHealth()
     fetchVoices()
     fetchHistory()
+
+    // Resilient periodic background health polling every 10s (Day 7 feature)
+    const pollInterval = setInterval(() => {
+      checkHealth()
+    }, 10000)
+
+    return () => clearInterval(pollInterval)
   }, [])
 
   // Switch voice when language changes
@@ -444,8 +457,35 @@ function App() {
         }
       }, 100)
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Failed to generate audio. Check backend connection.'
-      setErrorMessage(msg)
+      const statusCode = err.response?.status
+      let userMsg = 'Failed to generate audio. Check backend connection.'
+      let canRetry = true
+
+      if (!err.response) {
+        userMsg = 'Network error: Cannot reach backend server. Please check if the server is running.'
+        setBackendStatus('offline')
+      } else if (statusCode === 400) {
+        userMsg = err.response?.data?.detail || 'Invalid request parameters or unsupported voice selected.'
+        canRetry = false
+      } else if (statusCode === 422) {
+        userMsg = 'Validation error: Text length must be between 1 and 1000 characters.'
+        canRetry = false
+      } else if (statusCode === 404) {
+        userMsg = 'TTS service endpoint not found (HTTP 404).'
+        canRetry = false
+      } else if (statusCode === 500) {
+        userMsg = err.response?.data?.detail || 'Internal server error occurred while synthesizing speech.'
+      } else if (statusCode === 503) {
+        userMsg = 'Speech synthesis engine is temporarily busy or unavailable. Please try again.'
+      } else {
+        userMsg = err.response?.data?.detail || `Error (${statusCode}): Unable to complete speech synthesis.`
+      }
+
+      setErrorMessage({
+        message: userMsg,
+        code: statusCode,
+        canRetry,
+      })
     } finally {
       setIsGenerating(false)
     }
@@ -461,48 +501,48 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center py-10 px-4 sm:px-6">
+    <div className="min-h-screen bg-[#F8F7F4] text-slate-800 flex flex-col items-center py-10 px-4 sm:px-6">
       <div className="w-full max-w-3xl space-y-8">
 
         {/* Header */}
         <header className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold tracking-wider uppercase">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0057FF]/10 border border-[#0057FF]/25 text-[#0057FF] text-xs font-semibold tracking-wider uppercase">
+            <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
             Full-Stack Speech Synthesis
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
             Text to Speech Application
           </h1>
 
-          <p className="text-sm text-slate-400 max-w-lg mx-auto">
+          <p className="text-sm text-slate-600 max-w-lg mx-auto">
             Convert written text into natural-sounding speech across multiple languages with instant playback and export.
           </p>
         </header>
 
         {/* Health status banner */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 px-4 flex items-center justify-between text-sm backdrop-blur">
+        <div className="bg-white border border-slate-200/90 rounded-xl p-3 px-4 flex items-center justify-between text-sm shadow-sm">
           <div className="flex items-center gap-2">
-            <Server className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-400">Backend API:</span>
+            <Server className="w-4 h-4 text-slate-500" />
+            <span className="text-slate-600 font-medium">Backend API:</span>
 
             {backendStatus === 'online' && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 Online
               </span>
             )}
 
             {backendStatus === 'offline' && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
-                <AlertCircle className="w-3.5 h-3.5" />
-                Offline
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full" title="Attempting auto-reconnect every 10s">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                Offline (Auto-reconnecting)
               </span>
             )}
 
             {backendStatus === 'checking' && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                <RefreshCw className="w-3 h-3 animate-spin" />
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                <RefreshCw className="w-3 h-3 animate-spin text-amber-600" />
                 Checking...
               </span>
             )}
@@ -510,7 +550,7 @@ function App() {
 
           <button
             onClick={handleRefresh}
-            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 transition cursor-pointer"
+            className="text-xs text-slate-500 hover:text-[#0057FF] flex items-center gap-1 transition cursor-pointer font-medium"
           >
             <RefreshCw className="w-3 h-3" />
             Refresh
@@ -518,13 +558,13 @@ function App() {
         </div>
 
         {/* Main card */}
-        <main className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <main className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
 
           {/* Text input (with Day 6 File Upload support) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label htmlFor="tts-text" className="text-sm font-semibold text-slate-200 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-400" />
+              <label htmlFor="tts-text" className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-[#0057FF]" />
                 Enter text
               </label>
 
@@ -542,7 +582,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition cursor-pointer"
+                  className="text-xs text-[#0057FF] hover:text-[#0047db] flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0057FF]/10 hover:bg-[#0057FF]/15 border border-[#0057FF]/25 transition cursor-pointer font-medium"
                   title="Upload a .txt text file"
                 >
                   <Upload className="w-3.5 h-3.5" />
@@ -553,7 +593,7 @@ function App() {
                 <button
                   type="button"
                   onClick={handleClearText}
-                  className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-500/10 transition cursor-pointer"
+                  className="text-xs text-slate-500 hover:text-rose-600 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-50 transition cursor-pointer"
                   title="Clear input"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -568,7 +608,7 @@ function App() {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`relative rounded-xl transition ${
-                isDragging ? 'ring-2 ring-indigo-500' : ''
+                isDragging ? 'ring-2 ring-[#0057FF]' : ''
               }`}
             >
               <textarea
@@ -582,13 +622,13 @@ function App() {
                   if (uploadNotice) setUploadNotice(null)
                 }}
                 placeholder="Type or paste your text here, or drag and drop a .txt file..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-y"
+                className="w-full bg-[#F8F7F4]/60 border border-slate-200 rounded-xl p-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0057FF] focus:border-transparent transition resize-y"
               />
 
               {/* Drag overlay */}
               {isDragging && (
-                <div className="absolute inset-0 bg-slate-950/90 border-2 border-dashed border-indigo-500 rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none text-indigo-300 text-sm">
-                  <Upload className="w-8 h-8 animate-bounce text-indigo-400" />
+                <div className="absolute inset-0 bg-white/95 border-2 border-dashed border-[#0057FF] rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none text-[#0057FF] text-sm">
+                  <Upload className="w-8 h-8 animate-bounce text-[#0057FF]" />
                   <span className="font-medium">Drop your .txt file here to import text</span>
                 </div>
               )}
@@ -596,15 +636,15 @@ function App() {
 
             {/* File upload success/info notice */}
             {uploadNotice && (
-              <div className="p-2.5 px-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-300 text-xs flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <div className="p-2.5 px-3 bg-[#0057FF]/10 border border-[#0057FF]/20 rounded-xl text-[#0057FF] text-xs flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <FileText className="w-3.5 h-3.5 text-[#0057FF] shrink-0" />
                   {uploadNotice}
                 </span>
                 <button
                   type="button"
                   onClick={() => setUploadNotice(null)}
-                  className="text-slate-400 hover:text-slate-200 cursor-pointer p-0.5"
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
                   title="Dismiss notice"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -612,14 +652,14 @@ function App() {
               </div>
             )}
 
-            <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
               <span>
-                Words: <strong className="text-slate-200">{wordCount}</strong>
+                Words: <strong className="text-slate-700">{wordCount}</strong>
               </span>
 
               <span>
                 Characters:{' '}
-                <strong className={charCount > charLimit * 0.9 ? 'text-amber-400' : 'text-slate-200'}>
+                <strong className={charCount > charLimit * 0.9 ? 'text-amber-600' : 'text-slate-700'}>
                   {charCount}
                 </strong>{' '}
                 / {charLimit}
@@ -633,18 +673,18 @@ function App() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Language */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <Languages className="w-3.5 h-3.5 text-indigo-400" />
+                <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Languages className="w-3.5 h-3.5 text-[#0057FF]" />
                   Language
                 </label>
 
                 <select
                   value={selectedLanguage}
                   onChange={handleLanguageChange}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0057FF] cursor-pointer shadow-sm"
                 >
                   {languages.map((lang) => (
-                    <option key={lang} value={lang} className="bg-slate-950 text-slate-200">
+                    <option key={lang} value={lang} className="bg-white text-slate-800">
                       {lang}
                     </option>
                   ))}
@@ -654,18 +694,18 @@ function App() {
               {/* Voice with Favorite toggle (Day 5 feature) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Mic className="w-3.5 h-3.5 text-indigo-400" />
+                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-[#0057FF]" />
                     Voice
                   </label>
 
                   <button
                     type="button"
                     onClick={() => handleToggleFavoriteVoice(selectedVoice)}
-                    className={`text-xs flex items-center gap-1 px-1.5 py-0.5 rounded transition cursor-pointer ${
+                    className={`text-xs flex items-center gap-1 px-1.5 py-0.5 rounded transition cursor-pointer font-medium ${
                       favoriteVoices.includes(selectedVoice)
-                        ? 'text-amber-400 bg-amber-400/10 border border-amber-400/20'
-                        : 'text-slate-400 hover:text-amber-400'
+                        ? 'text-amber-700 bg-amber-50 border border-amber-200'
+                        : 'text-slate-500 hover:text-amber-600'
                     }`}
                     title={
                       favoriteVoices.includes(selectedVoice)
@@ -675,7 +715,7 @@ function App() {
                   >
                     <Star
                       className={`w-3 h-3 ${
-                        favoriteVoices.includes(selectedVoice) ? 'fill-amber-400' : ''
+                        favoriteVoices.includes(selectedVoice) ? 'fill-amber-500 text-amber-500' : ''
                       }`}
                     />
                     <span>
@@ -687,12 +727,12 @@ function App() {
                 <select
                   value={selectedVoice}
                   onChange={(e) => setSelectedVoice(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0057FF] cursor-pointer shadow-sm"
                 >
                   {availableVoices.map((v) => {
                     const isFav = favoriteVoices.includes(v.id)
                     return (
-                      <option key={v.id} value={v.id} className="bg-slate-950 text-slate-200">
+                      <option key={v.id} value={v.id} className="bg-white text-slate-800">
                         {isFav ? `★ ${v.name}` : v.name}
                       </option>
                     )
@@ -702,26 +742,26 @@ function App() {
             </div>
 
             {/* Audio Customization: Speed, Pitch, Volume (Day 5 feature) */}
-            <div className="border-t border-slate-800/70 pt-3 space-y-2">
-              <div className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5 uppercase tracking-wider">
-                <SlidersHorizontal className="w-3 h-3 text-indigo-400" />
+            <div className="border-t border-slate-100 pt-3 space-y-2">
+              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5 uppercase tracking-wider">
+                <SlidersHorizontal className="w-3 h-3 text-[#0057FF]" />
                 Audio Customization
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* Speed */}
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
-                    <Gauge className="w-3 h-3 text-indigo-400" />
+                  <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                    <Gauge className="w-3 h-3 text-[#0057FF]" />
                     Speed
                   </label>
                   <select
                     value={selectedSpeed}
                     onChange={(e) => setSelectedSpeed(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0057FF] cursor-pointer shadow-sm"
                   >
                     {SPEED_OPTIONS.map((opt) => (
-                      <option key={opt.rate} value={opt.rate} className="bg-slate-950 text-slate-200">
+                      <option key={opt.rate} value={opt.rate} className="bg-white text-slate-800">
                         {opt.label}
                       </option>
                     ))}
@@ -730,17 +770,17 @@ function App() {
 
                 {/* Pitch */}
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
-                    <SlidersHorizontal className="w-3 h-3 text-indigo-400" />
+                  <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                    <SlidersHorizontal className="w-3 h-3 text-[#0057FF]" />
                     Pitch
                   </label>
                   <select
                     value={selectedPitch}
                     onChange={(e) => setSelectedPitch(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0057FF] cursor-pointer shadow-sm"
                   >
                     {PITCH_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-slate-950 text-slate-200">
+                      <option key={opt.value} value={opt.value} className="bg-white text-slate-800">
                         {opt.label}
                       </option>
                     ))}
@@ -749,17 +789,17 @@ function App() {
 
                 {/* Volume */}
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
-                    <Volume1 className="w-3 h-3 text-indigo-400" />
+                  <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                    <Volume1 className="w-3 h-3 text-[#0057FF]" />
                     Volume
                   </label>
                   <select
                     value={selectedVolume}
                     onChange={(e) => setSelectedVolume(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0057FF] cursor-pointer shadow-sm"
                   >
                     {VOLUME_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value} className="bg-slate-950 text-slate-200">
+                      <option key={opt.value} value={opt.value} className="bg-white text-slate-800">
                         {opt.label}
                       </option>
                     ))}
@@ -769,11 +809,39 @@ function App() {
             </div>
           </div>
 
-          {/* Error notice */}
+          {/* Error notice (resilient error handling with status code badge & retry button) */}
           {errorMessage && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{typeof errorMessage === 'object' ? errorMessage.message : errorMessage}</span>
+                {typeof errorMessage === 'object' && errorMessage.code && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 border border-rose-300 text-rose-800 font-mono shrink-0">
+                    HTTP {errorMessage.code}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {typeof errorMessage === 'object' && errorMessage.canRetry && (
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white font-medium flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Retry
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setErrorMessage(null)}
+                  className="text-rose-500 hover:text-rose-800 cursor-pointer p-0.5"
+                  title="Dismiss error"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -784,8 +852,8 @@ function App() {
               disabled={isGenerating || text.trim() === ''}
               className={`w-full py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition ${
                 isGenerating || text.trim() === ''
-                  ? 'bg-indigo-600/40 text-slate-400 cursor-not-allowed'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-lg shadow-indigo-600/20 active:scale-[0.99]'
+                  ? 'bg-[#0057FF]/40 text-white/80 cursor-not-allowed'
+                  : 'bg-[#0057FF] hover:bg-[#0047db] text-white cursor-pointer shadow-md shadow-[#0057FF]/25 active:scale-[0.99]'
               }`}
             >
               {isGenerating ? (
@@ -803,22 +871,22 @@ function App() {
           </div>
 
           {/* Audio player / output card */}
-          <div className="border-t border-slate-800/80 pt-6 space-y-4">
+          <div className="border-t border-slate-100 pt-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Music className="w-3.5 h-3.5 text-indigo-400" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Music className="w-3.5 h-3.5 text-[#0057FF]" />
                 Audio Output
               </h3>
 
               {generatedAudio && (
-                <span className="text-[11px] text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                   Ready
                 </span>
               )}
             </div>
 
             {generatedAudio ? (
-              <div className="bg-slate-950/80 border border-indigo-500/20 rounded-xl p-4 space-y-3">
+              <div className="bg-[#F8F7F4]/90 border border-[#0057FF]/20 rounded-xl p-4 space-y-3">
                 <audio
                   ref={audioRef}
                   controls
@@ -828,9 +896,9 @@ function App() {
                   Your browser does not support audio playback.
                 </audio>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60 text-xs text-slate-400">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200/80 text-xs text-slate-600">
                   <div className="flex items-center gap-2">
-                    <span>Voice: <strong className="text-slate-200">{generatedAudio.voice}</strong></span>
+                    <span>Voice: <strong className="text-slate-800">{generatedAudio.voice}</strong></span>
                     <span>•</span>
                     <span>{generatedAudio.char_count} chars</span>
                     <span>•</span>
@@ -840,17 +908,17 @@ function App() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleCopy}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 flex items-center gap-1.5 transition cursor-pointer shadow-sm font-medium"
                       title="Copy direct audio URL"
                     >
                       {copied ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Copied</span>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700">Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3.5 h-3.5" />
+                          <Copy className="w-3.5 h-3.5 text-slate-500" />
                           <span>Copy Link</span>
                         </>
                       )}
@@ -859,7 +927,7 @@ function App() {
                     <a
                       href={generatedAudio.audio_url}
                       download={generatedAudio.filename}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-[#0057FF] hover:bg-[#0047db] text-white font-medium flex items-center gap-1.5 transition cursor-pointer shadow-sm"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Download</span>
@@ -868,10 +936,10 @@ function App() {
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
-                <Volume2 className="w-7 h-7 text-slate-600" />
-                <span className="text-slate-400">No audio generated yet</span>
-                <span className="text-xs text-slate-500">
+              <div className="bg-[#F8F7F4]/60 border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
+                <Volume2 className="w-7 h-7 text-slate-400" />
+                <span className="text-slate-600 font-medium">No audio generated yet</span>
+                <span className="text-xs text-slate-400">
                   Select your voice and click "Generate Speech" above.
                 </span>
               </div>
@@ -881,20 +949,20 @@ function App() {
         </main>
 
         {/* Speech History Card (Day 4 & Day 5 Features) */}
-        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <section className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+              <div className="p-2 rounded-lg bg-[#0057FF]/10 border border-[#0057FF]/20 text-[#0057FF]">
                 <History className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-slate-100">Speech History</h2>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 font-semibold">
+                  <h2 className="text-lg font-bold text-slate-900">Speech History</h2>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[#0057FF]/10 border border-[#0057FF]/25 text-[#0057FF] font-semibold">
                     {totalHistory}
                   </span>
                 </div>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500">
                   Previously generated speech stored in database
                 </p>
               </div>
@@ -902,13 +970,13 @@ function App() {
 
             {/* Filter Tabs and Clear Action (Day 5 feature) */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+              <div className="flex items-center bg-[#F8F7F4] p-1 rounded-xl border border-slate-200 text-xs">
                 <button
                   onClick={() => setHistoryTab('all')}
                   className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
                     historyTab === 'all'
-                      ? 'bg-indigo-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#0057FF] text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   All ({historyItems.length})
@@ -917,11 +985,11 @@ function App() {
                   onClick={() => setHistoryTab('favorites')}
                   className={`px-3 py-1 rounded-lg font-medium flex items-center gap-1.5 transition cursor-pointer ${
                     historyTab === 'favorites'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'text-slate-400 hover:text-amber-400'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-200 shadow-sm'
+                      : 'text-slate-600 hover:text-amber-600'
                   }`}
                 >
-                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
                   Favorites ({historyItems.filter((i) => i.is_favorite).length})
                 </button>
               </div>
@@ -929,7 +997,7 @@ function App() {
               {historyItems.length > 0 && (
                 <button
                   onClick={handleClearHistory}
-                  className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-rose-500/10 border border-rose-500/20 transition cursor-pointer"
+                  className="text-xs text-rose-600 hover:text-rose-700 flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-rose-50 border border-rose-200 transition cursor-pointer font-medium"
                   title="Clear all audio history records"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -941,34 +1009,34 @@ function App() {
 
           {/* Error banner for history actions */}
           {historyError && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{historyError}</span>
             </div>
           )}
 
           {/* Loading state */}
           {isLoadingHistory && historyItems.length === 0 ? (
-            <div className="py-8 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+            <div className="py-8 text-center text-slate-500 text-sm flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-[#0057FF]" />
               <span>Loading speech history...</span>
             </div>
           ) : historyItems.length === 0 ? (
             /* Empty state */
-            <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
-              <History className="w-7 h-7 text-slate-600" />
-              <span className="text-slate-400 font-medium">No speech history yet</span>
-              <span className="text-xs text-slate-500">
+            <div className="bg-[#F8F7F4]/60 border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
+              <History className="w-7 h-7 text-slate-400" />
+              <span className="text-slate-700 font-medium">No speech history yet</span>
+              <span className="text-xs text-slate-400">
                 Generated audio clips are automatically saved and will appear here.
               </span>
             </div>
           ) : historyTab === 'favorites' &&
             historyItems.filter((i) => i.is_favorite).length === 0 ? (
             /* Empty favorites filter state */
-            <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
-              <Star className="w-7 h-7 text-slate-600" />
-              <span className="text-slate-400 font-medium">No favorite audio yet</span>
-              <span className="text-xs text-slate-500">
+            <div className="bg-[#F8F7F4]/60 border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
+              <Star className="w-7 h-7 text-slate-400" />
+              <span className="text-slate-700 font-medium">No favorite audio yet</span>
+              <span className="text-xs text-slate-400">
                 Click the star icon on any speech card to add it to your favorites.
               </span>
             </div>
@@ -980,15 +1048,15 @@ function App() {
                 .map((item) => (
                   <div
                     key={item.id}
-                    className={`bg-slate-950/70 border rounded-xl p-4 space-y-3 transition ${
+                    className={`bg-[#F8F7F4]/60 border rounded-xl p-4 space-y-3 transition ${
                       item.is_favorite
-                        ? 'border-amber-500/30 hover:border-amber-500/50'
-                        : 'border-slate-800/90 hover:border-slate-700/80'
+                        ? 'border-amber-300 bg-amber-50/30 hover:border-amber-400'
+                        : 'border-slate-200 hover:border-[#0057FF]/30'
                     }`}
                   >
                     {/* Top: Text snippet & actions (Favorite + Delete) */}
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm text-slate-200 leading-relaxed font-normal">
+                      <p className="text-sm text-slate-800 leading-relaxed font-normal">
                         &ldquo;{item.text}&rdquo;
                       </p>
 
@@ -998,8 +1066,8 @@ function App() {
                           onClick={() => handleToggleFavoriteItem(item.id)}
                           className={`p-1.5 rounded-lg transition cursor-pointer ${
                             item.is_favorite
-                              ? 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20'
-                              : 'text-slate-500 hover:text-amber-400 hover:bg-slate-800/80'
+                              ? 'text-amber-600 bg-amber-100 hover:bg-amber-200'
+                              : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
                           }`}
                           title={
                             item.is_favorite
@@ -1009,14 +1077,14 @@ function App() {
                         >
                           <Star
                             className={`w-4 h-4 ${
-                              item.is_favorite ? 'fill-amber-400 text-amber-400' : ''
+                              item.is_favorite ? 'fill-amber-500 text-amber-500' : ''
                             }`}
                           />
                         </button>
 
                         <button
                           onClick={() => handleDeleteHistoryItem(item.id)}
-                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-800/80 transition cursor-pointer"
+                          className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer"
                           title="Delete history item"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1026,24 +1094,24 @@ function App() {
 
                     {/* Badges and timestamp */}
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 font-medium border border-indigo-500/20">
-                        <Mic className="w-3 h-3 text-indigo-400" />
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0057FF]/10 text-[#0057FF] font-medium border border-[#0057FF]/20">
+                        <Mic className="w-3 h-3 text-[#0057FF]" />
                         {item.voice}
                       </span>
                       {item.language && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
-                          <Languages className="w-3 h-3 text-slate-400" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white text-slate-600 border border-slate-200 shadow-xs">
+                          <Languages className="w-3 h-3 text-slate-500" />
                           {item.language}
                         </span>
                       )}
                       {item.is_favorite && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px]">
-                          <Star className="w-2.5 h-2.5 fill-amber-400" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-medium">
+                          <Star className="w-2.5 h-2.5 fill-amber-500" />
                           Favorite
                         </span>
                       )}
-                      <span className="text-slate-500 flex items-center gap-1 text-[11px] ml-auto">
-                        <Clock className="w-3 h-3 text-slate-600" />
+                      <span className="text-slate-400 flex items-center gap-1 text-[11px] ml-auto">
+                        <Clock className="w-3 h-3 text-slate-400" />
                         {formatDate(item.created_at)}
                       </span>
                     </div>
@@ -1059,10 +1127,10 @@ function App() {
                     </audio>
 
                     {/* Actions: Load Text, Copy Link, Download */}
-                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-900 text-xs">
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-200/80 text-xs">
                       <button
                         onClick={() => handleUseHistoryText(item.text)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 shadow-sm flex items-center gap-1.5 transition cursor-pointer font-medium"
                         title="Load this text into input"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -1071,17 +1139,17 @@ function App() {
 
                       <button
                         onClick={() => handleCopyHistoryUrl(item)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 shadow-sm flex items-center gap-1.5 transition cursor-pointer font-medium"
                         title="Copy direct audio URL"
                       >
                         {copiedHistoryId === item.id ? (
                           <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="text-emerald-400">Copied</span>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Copied</span>
                           </>
                         ) : (
                           <>
-                            <Copy className="w-3.5 h-3.5" />
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
                             <span>Copy Link</span>
                           </>
                         )}
@@ -1090,7 +1158,7 @@ function App() {
                       <a
                         href={item.audio_url}
                         download
-                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1.5 transition cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-[#0057FF] hover:bg-[#0047db] text-white font-medium flex items-center gap-1.5 transition cursor-pointer shadow-sm"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>Download</span>
@@ -1107,8 +1175,8 @@ function App() {
           <p>
             Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
-          <p className="text-slate-600">
-            Day 6 Completed: Text File Upload & Drag-and-Drop Processing.
+          <p className="text-slate-400">
+            Day 7 Completed: Connection Resilience, Error Handling & Comprehensive Error Testing (Week 1 Complete).
           </p>
         </footer>
 

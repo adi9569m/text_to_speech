@@ -159,6 +159,10 @@ class TTSService:
         if len(clean_text) > 1000:
             raise ValueError("Text exceeds maximum limit of 1000 characters.")
 
+        valid_voice_ids = [v["id"] for v in CURATED_VOICES]
+        if voice not in valid_voice_ids:
+            raise ValueError(f"Invalid voice '{voice}'. Please select a supported voice.")
+
         # Safe rate, pitch, and volume adjustments
         valid_rate = rate if (rate.startswith(("+", "-")) and rate.endswith("%")) else "+0%"
         valid_pitch = pitch if (pitch.startswith(("+", "-")) and pitch.endswith("Hz")) else "+0Hz"
