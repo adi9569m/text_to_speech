@@ -21,6 +21,9 @@ import {
   Star,
   SlidersHorizontal,
   Volume1,
+  Upload,
+  FileText,
+  X,
 } from 'lucide-react'
 
 // Initial fallback voices while fetching from API
@@ -145,6 +148,12 @@ function App() {
   const [generatedAudio, setGeneratedAudio] = useState(null)
   const [errorMessage, setErrorMessage] = useState(null)
   const [copied, setCopied] = useState(false)
+
+  // Text file upload states & ref (Day 6 feature)
+  const fileInputRef = useRef(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadedFileName, setUploadedFileName] = useState(null)
+  const [uploadNotice, setUploadNotice] = useState(null)
 
   // Speech history states (Day 4 feature)
   const [historyItems, setHistoryItems] = useState([])
@@ -292,8 +301,84 @@ function App() {
   // Reuse history item text in the main input textarea (Day 4 feature)
   const handleUseHistoryText = (itemText) => {
     setText(itemText)
+    setUploadedFileName(null)
+    setUploadNotice(null)
     setErrorMessage(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // File Upload Handlers (Day 6 feature)
+  const handleFileRead = (file) => {
+    if (!file) return
+
+    const isValidTextFile =
+      file.name.match(/\.(txt|text)$/i) || file.type === 'text/plain'
+
+    if (!isValidTextFile) {
+      setErrorMessage('Please upload a plain text file (.txt).')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result || ''
+      if (!content.trim()) {
+        setErrorMessage('The uploaded file is empty.')
+        return
+      }
+
+      if (content.length > charLimit) {
+        setText(content.slice(0, charLimit))
+        setUploadNotice(
+          `Imported "${file.name}" (truncated to ${charLimit} max characters).`
+        )
+      } else {
+        setText(content)
+        setUploadNotice(`Imported "${file.name}" successfully.`)
+      }
+
+      setUploadedFileName(file.name)
+      setErrorMessage(null)
+    }
+
+    reader.onerror = () => {
+      setErrorMessage('Failed to read the file. Please try again.')
+    }
+
+    reader.readAsText(file)
+  }
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (file) handleFileRead(file)
+    if (e.target) e.target.value = ''
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (file) handleFileRead(file)
+  }
+
+  const handleClearText = () => {
+    setText('')
+    setUploadedFileName(null)
+    setUploadNotice(null)
+    setErrorMessage(null)
   }
 
   const handleRefresh = () => {
@@ -435,36 +520,97 @@ function App() {
         {/* Main card */}
         <main className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
 
-          {/* Text input */}
+          {/* Text input (with Day 6 File Upload support) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label htmlFor="tts-text" className="text-sm font-semibold text-slate-200">
+              <label htmlFor="tts-text" className="text-sm font-semibold text-slate-200 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-indigo-400" />
                 Enter text
               </label>
 
-              <button
-                type="button"
-                onClick={() => setText('')}
-                className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1 transition cursor-pointer"
-                title="Clear input"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Hidden file input for .txt files */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".txt,.text,text/plain"
+                  className="hidden"
+                />
+
+                {/* Upload text file button (Day 6 feature) */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition cursor-pointer"
+                  title="Upload a .txt text file"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload .txt
+                </button>
+
+                {/* Clear input button */}
+                <button
+                  type="button"
+                  onClick={handleClearText}
+                  className="text-xs text-slate-400 hover:text-rose-400 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-500/10 transition cursor-pointer"
+                  title="Clear input"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear
+                </button>
+              </div>
             </div>
 
-            <textarea
-              id="tts-text"
-              rows={5}
-              value={text}
-              maxLength={charLimit}
-              onChange={(e) => {
-                setText(e.target.value)
-                if (errorMessage) setErrorMessage(null)
-              }}
-              placeholder="Type or paste your text here..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-y"
-            />
+            {/* Drag & drop wrapper */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`relative rounded-xl transition ${
+                isDragging ? 'ring-2 ring-indigo-500' : ''
+              }`}
+            >
+              <textarea
+                id="tts-text"
+                rows={5}
+                value={text}
+                maxLength={charLimit}
+                onChange={(e) => {
+                  setText(e.target.value)
+                  if (errorMessage) setErrorMessage(null)
+                  if (uploadNotice) setUploadNotice(null)
+                }}
+                placeholder="Type or paste your text here, or drag and drop a .txt file..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-y"
+              />
+
+              {/* Drag overlay */}
+              {isDragging && (
+                <div className="absolute inset-0 bg-slate-950/90 border-2 border-dashed border-indigo-500 rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none text-indigo-300 text-sm">
+                  <Upload className="w-8 h-8 animate-bounce text-indigo-400" />
+                  <span className="font-medium">Drop your .txt file here to import text</span>
+                </div>
+              )}
+            </div>
+
+            {/* File upload success/info notice */}
+            {uploadNotice && (
+              <div className="p-2.5 px-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-300 text-xs flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  {uploadNotice}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setUploadNotice(null)}
+                  className="text-slate-400 hover:text-slate-200 cursor-pointer p-0.5"
+                  title="Dismiss notice"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
               <span>
@@ -962,7 +1108,7 @@ function App() {
             Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
           <p className="text-slate-600">
-            Day 5 Completed: Favorites & Audio Customization.
+            Day 6 Completed: Text File Upload & Drag-and-Drop Processing.
           </p>
         </footer>
 
