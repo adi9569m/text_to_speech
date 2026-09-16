@@ -1,15 +1,18 @@
 import os
 from pathlib import Path
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.models.database import get_db
 from backend.models.history import AudioHistory
+from backend.models.user import User
 from backend.schemas.history import (
     AudioHistoryList,
     HistoryDeleteResponse,
     HistoryFavoriteResponse,
 )
+from backend.services.auth_service import get_optional_user
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 AUDIO_DIR = BASE_DIR / os.getenv("AUDIO_OUTPUT_DIR", "generated_audio")
@@ -27,9 +30,15 @@ def get_history(
     limit: int = Query(default=50, ge=1, le=100, description="Max records to return"),
     favorite_only: bool = Query(default=False, description="Filter favorites only (Day 5 feature)"),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
 ):
     """Retrieve list of previously generated audio items, ordered newest first."""
     query = db.query(AudioHistory)
+    if user:
+        query = query.filter(AudioHistory.user_id == user.id)
+    else:
+        query = query.filter(AudioHistory.user_id.is_(None))
+
     if favorite_only:
         query = query.filter(AudioHistory.is_favorite == True)
     query = query.order_by(AudioHistory.created_at.desc())
@@ -103,9 +112,18 @@ def delete_history_item(history_id: int, db: Session = Depends(get_db)):
     response_model=HistoryDeleteResponse,
     summary="Clear all audio generation history",
 )
-def clear_all_history(db: Session = Depends(get_db)):
+def clear_all_history(
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
+):
     """Clear all history records and remove generated audio files."""
-    items = db.query(AudioHistory).all()
+    query = db.query(AudioHistory)
+    if user:
+        query = query.filter(AudioHistory.user_id == user.id)
+    else:
+        query = query.filter(AudioHistory.user_id.is_(None))
+
+    items = query.all()
     for item in items:
         if item.audio_url:
             filename = Path(item.audio_url).name
@@ -116,7 +134,7 @@ def clear_all_history(db: Session = Depends(get_db)):
                 except OSError:
                     pass
 
-    db.query(AudioHistory).delete()
+    query.delete(synchronize_session=False)
     db.commit()
     return {
         "success": True,

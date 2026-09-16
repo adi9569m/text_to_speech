@@ -13,9 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from backend.models.database import Base, engine, init_db
-from backend.routers import tts, history
+from backend.routers import tts, history, auth
 
-# Initialize SQLite database tables and schema (Day 3 & Day 5 features)
+# Initialize SQLite database tables and schema (Day 3, Day 5, & Day 8 features)
 init_db()
 
 load_dotenv()
@@ -53,6 +53,7 @@ app.mount("/audio", StaticFiles(directory=str(AUDIO_DIR)), name="audio")
 # Register feature routers
 app.include_router(tts.router, prefix="/api", tags=["TTS"])
 app.include_router(history.router, prefix="/api", tags=["History"])
+app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 
 
 @app.get("/api/health", tags=["Health"])

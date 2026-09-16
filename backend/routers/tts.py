@@ -2,13 +2,16 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from typing import Optional
 from backend.models.database import get_db
 from backend.models.history import AudioHistory
+from backend.models.user import User
 from backend.schemas.tts import (
     TTSGenerateRequest,
     TTSGenerateResponse,
     VoicesResponse,
 )
+from backend.services.auth_service import get_optional_user
 from backend.services.tts_service import TTSService
 
 logger = logging.getLogger(__name__)
@@ -51,6 +54,7 @@ async def get_voices():
 async def generate_speech(
     payload: TTSGenerateRequest,
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_optional_user),
 ):
     try:
         result = await TTSService.synthesize(
@@ -61,7 +65,7 @@ async def generate_speech(
             volume=payload.volume,
         )
 
-        # Persist to database history (Day 3 feature)
+        # Persist to database history (Day 3 & Day 8 User Association)
         try:
             resolved_lang = payload.language or TTSService.get_language_for_voice(payload.voice)
             history_record = AudioHistory(
@@ -69,6 +73,7 @@ async def generate_speech(
                 language=resolved_lang,
                 voice=payload.voice,
                 audio_url=result["audio_url"],
+                user_id=user.id if user else None,
             )
             db.add(history_record)
             db.commit()

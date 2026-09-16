@@ -22,5 +22,6 @@ class AudioHistory(Base):
     voice = Column(String(100), nullable=False)
     audio_url = Column(String(255), nullable=False)
     is_favorite = Column(Boolean, default=False, nullable=False)
+    user_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

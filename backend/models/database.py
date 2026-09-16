@@ -21,7 +21,11 @@ Base = declarative_base()
 
 
 def init_db():
-    """Initialize database tables and ensure Day 5 is_favorite column exists."""
+    """Initialize database tables and ensure Day 5 is_favorite and Day 8 user_id columns exist."""
+    # Ensure models are loaded onto Base
+    from backend.models.history import AudioHistory  # noqa: F401
+    from backend.models.user import User  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
         try:
@@ -29,6 +33,9 @@ def init_db():
             columns = [row[1] for row in res.fetchall()]
             if columns and "is_favorite" not in columns:
                 conn.execute(text("ALTER TABLE audio_history ADD COLUMN is_favorite BOOLEAN DEFAULT 0"))
+                conn.commit()
+            if columns and "user_id" not in columns:
+                conn.execute(text("ALTER TABLE audio_history ADD COLUMN user_id INTEGER DEFAULT NULL"))
                 conn.commit()
         except Exception:
             pass

@@ -24,6 +24,10 @@ import {
   Upload,
   FileText,
   X,
+  User,
+  LogIn,
+  LogOut,
+  Lock,
 } from 'lucide-react'
 
 // Initial fallback voices while fetching from API
@@ -143,6 +147,31 @@ function App() {
     }
   })
 
+  // Authentication states (Day 8 feature)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tts_auth_user')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  const [authToken, setAuthToken] = useState(() => {
+    return localStorage.getItem('tts_auth_token') || null
+  })
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [authMode, setAuthMode] = useState('login') // 'login' | 'register'
+  const [authUsername, setAuthUsername] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState(null)
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authSuccessNotice, setAuthSuccessNotice] = useState(null)
+
+  // Auth header helper
+  const getAuthHeaders = () => {
+    return authToken ? { Authorization: `Bearer ${authToken}` } : {}
+  }
+
   // Audio generation states
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedAudio, setGeneratedAudio] = useState(null)
@@ -224,12 +253,15 @@ function App() {
     }
   }
 
-  // Fetch speech generation history (Day 4 feature)
+  // Fetch speech generation history (Day 4 & Day 8 User Scoping)
   const fetchHistory = async () => {
     setIsLoadingHistory(true)
     setHistoryError(null)
     try {
-      const response = await axios.get('/api/history', { timeout: 4000 })
+      const response = await axios.get('/api/history', {
+        headers: getAuthHeaders(),
+        timeout: 4000,
+      })
       if (response.data) {
         setHistoryItems(response.data.items || [])
         setTotalHistory(response.data.total || 0)
@@ -241,10 +273,10 @@ function App() {
     }
   }
 
-  // Delete a single history item (Day 4 feature)
+  // Delete a single history item (Day 4 & Day 8 User Scoping)
   const handleDeleteHistoryItem = async (id) => {
     try {
-      await axios.delete(`/api/history/${id}`)
+      await axios.delete(`/api/history/${id}`, { headers: getAuthHeaders() })
       setHistoryItems((prev) => prev.filter((item) => item.id !== id))
       setTotalHistory((prev) => Math.max(0, prev - 1))
     } catch {
@@ -252,13 +284,13 @@ function App() {
     }
   }
 
-  // Clear all history items (Day 4 feature)
+  // Clear all history items (Day 4 & Day 8 User Scoping)
   const handleClearHistory = async () => {
-    if (!window.confirm('Are you sure you want to clear all speech history?')) {
+    if (!window.confirm('Are you sure you want to clear your speech history?')) {
       return
     }
     try {
-      await axios.delete('/api/history')
+      await axios.delete('/api/history', { headers: getAuthHeaders() })
       setHistoryItems([])
       setTotalHistory(0)
     } catch {
@@ -289,7 +321,7 @@ function App() {
     })
   }
 
-  // Toggle favorite status of a history item (Day 5 feature)
+  // Toggle favorite status of a history item (Day 5 & Day 8 User Scoping)
   const handleToggleFavoriteItem = async (id) => {
     try {
       setHistoryItems((prev) =>
@@ -297,7 +329,7 @@ function App() {
           item.id === id ? { ...item, is_favorite: !item.is_favorite } : item
         )
       )
-      await axios.patch(`/api/history/${id}/favorite`)
+      await axios.patch(`/api/history/${id}/favorite`, {}, { headers: getAuthHeaders() })
     } catch {
       setHistoryError('Could not update favorite status on server.')
       fetchHistory()
@@ -407,6 +439,72 @@ function App() {
     return () => clearInterval(pollInterval)
   }, [])
 
+  // Refetch history when authentication status changes (Day 8 feature)
+  useEffect(() => {
+    fetchHistory()
+  }, [authToken])
+
+  // Authentication Handlers (Day 8 feature)
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault()
+    setAuthError(null)
+
+    const username = authUsername.trim()
+    if (!username) {
+      setAuthError('Please enter a username.')
+      return
+    }
+    if (authMode === 'register' && username.length < 3) {
+      setAuthError('Username must be at least 3 characters.')
+      return
+    }
+    if (authPassword.length < 6) {
+      setAuthError('Password must be at least 6 characters.')
+      return
+    }
+
+    setAuthLoading(true)
+    try {
+      const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login'
+      const res = await axios.post(endpoint, {
+        username,
+        password: authPassword,
+      })
+
+      if (res.data?.success) {
+        setCurrentUser(res.data.user)
+        setAuthToken(res.data.token)
+        localStorage.setItem('tts_auth_user', JSON.stringify(res.data.user))
+        localStorage.setItem('tts_auth_token', res.data.token)
+
+        setAuthSuccessNotice(
+          authMode === 'register'
+            ? `Account created! Welcome, ${res.data.user.username}.`
+            : `Welcome back, ${res.data.user.username}!`
+        )
+        setTimeout(() => setAuthSuccessNotice(null), 4000)
+
+        setAuthUsername('')
+        setAuthPassword('')
+        setIsAuthModalOpen(false)
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Authentication failed. Please check your credentials.'
+      setAuthError(msg)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleSignOut = () => {
+    setCurrentUser(null)
+    setAuthToken(null)
+    localStorage.removeItem('tts_auth_user')
+    localStorage.removeItem('tts_auth_token')
+    setAuthSuccessNotice('Signed out successfully.')
+    setTimeout(() => setAuthSuccessNotice(null), 3000)
+  }
+
   // Switch voice when language changes
   const handleLanguageChange = (e) => {
     const nextLang = e.target.value
@@ -435,14 +533,18 @@ function App() {
     setErrorMessage(null)
 
     try {
-      const res = await axios.post('/api/tts', {
-        text: input,
-        language: selectedLanguage,
-        voice: selectedVoice,
-        rate: selectedSpeed,
-        pitch: selectedPitch,
-        volume: selectedVolume,
-      })
+      const res = await axios.post(
+        '/api/tts',
+        {
+          text: input,
+          language: selectedLanguage,
+          voice: selectedVoice,
+          rate: selectedSpeed,
+          pitch: selectedPitch,
+          volume: selectedVolume,
+        },
+        { headers: getAuthHeaders() }
+      )
 
       setGeneratedAudio(res.data)
 
@@ -520,11 +622,11 @@ function App() {
           </p>
         </header>
 
-        {/* Health status banner */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-3 px-4 flex items-center justify-between text-sm shadow-sm">
+        {/* Top bar: Health status and User Authentication (Day 8 feature) */}
+        <div className="bg-white border border-slate-200/90 rounded-xl p-3 px-4 flex flex-wrap items-center justify-between gap-3 text-sm shadow-sm">
           <div className="flex items-center gap-2">
             <Server className="w-4 h-4 text-slate-500" />
-            <span className="text-slate-600 font-medium">Backend API:</span>
+            <span className="text-slate-600 font-medium">Backend:</span>
 
             {backendStatus === 'online' && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
@@ -546,16 +648,67 @@ function App() {
                 Checking...
               </span>
             )}
+
+            <button
+              onClick={handleRefresh}
+              className="text-xs text-slate-500 hover:text-[#0057FF] flex items-center gap-1 transition cursor-pointer font-medium ml-1 p-1 hover:bg-slate-100 rounded"
+              title="Refresh connection & voices"
+            >
+              <RefreshCw className="w-3 h-3" />
+            </button>
           </div>
 
-          <button
-            onClick={handleRefresh}
-            className="text-xs text-slate-500 hover:text-[#0057FF] flex items-center gap-1 transition cursor-pointer font-medium"
-          >
-            <RefreshCw className="w-3 h-3" />
-            Refresh
-          </button>
+          {/* User Account / Auth Widget (Day 8 Level 2 feature) */}
+          <div className="flex items-center gap-2">
+            {currentUser ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 bg-[#F8F7F4] border border-slate-200 px-2.5 py-1 rounded-lg">
+                  <User className="w-3.5 h-3.5 text-[#0057FF]" />
+                  <span className="font-semibold text-slate-900">{currentUser.username}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="text-xs text-slate-500 hover:text-rose-600 font-medium flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthError(null)
+                  setAuthMode('login')
+                  setIsAuthModalOpen(true)
+                }}
+                className="text-xs text-[#0057FF] hover:text-white font-medium flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#0057FF]/10 hover:bg-[#0057FF] border border-[#0057FF]/25 transition cursor-pointer shadow-2xs"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In / Register</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Auth success / state notice */}
+        {authSuccessNotice && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center justify-between gap-2 shadow-sm">
+            <span className="flex items-center gap-2 font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              {authSuccessNotice}
+            </span>
+            <button
+              type="button"
+              onClick={() => setAuthSuccessNotice(null)}
+              className="text-emerald-600 hover:text-emerald-800 p-0.5 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Main card */}
         <main className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
@@ -963,7 +1116,25 @@ function App() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-500">
-                  Previously generated speech stored in database
+                  {currentUser ? (
+                    <>Personal history for <strong className="text-slate-700">{currentUser.username}</strong></>
+                  ) : (
+                    <>
+                      Guest speech history •{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthError(null)
+                          setAuthMode('login')
+                          setIsAuthModalOpen(true)
+                        }}
+                        className="text-[#0057FF] hover:underline font-medium cursor-pointer"
+                      >
+                        Sign in
+                      </button>{' '}
+                      to save across sessions
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -1176,11 +1347,160 @@ function App() {
             Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
           <p className="text-slate-400">
-            Day 7 Completed: Connection Resilience, Error Handling & Comprehensive Error Testing (Week 1 Complete).
+            Day 8 Completed: User Accounts & Authentication (PDF Section 17 & 25 Level 2).
           </p>
         </footer>
 
       </div>
+
+      {/* Auth Modal (Day 8 Level 2 User Authentication) */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 max-w-sm w-full shadow-2xl space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-[#0057FF]/10 border border-[#0057FF]/20 text-[#0057FF]">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {authMode === 'login'
+                      ? 'Access your personal speech history'
+                      : 'Create an account for personal history'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-2 bg-[#F8F7F4] p-1 rounded-xl border border-slate-200 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login')
+                  setAuthError(null)
+                }}
+                className={`py-1.5 rounded-lg transition cursor-pointer ${
+                  authMode === 'login'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('register')
+                  setAuthError(null)
+                }}
+                className={`py-1.5 rounded-lg transition cursor-pointer ${
+                  authMode === 'register'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Register
+              </button>
+            </div>
+
+            {/* Auth Form */}
+            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Username</label>
+                <input
+                  type="text"
+                  required
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  placeholder={authMode === 'register' ? 'Choose username (min 3 chars)' : 'Your username'}
+                  className="w-full bg-[#F8F7F4]/60 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0057FF]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder={authMode === 'register' ? 'Min 6 characters' : 'Your password'}
+                  className="w-full bg-[#F8F7F4]/60 border border-slate-200 rounded-lg p-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0057FF]"
+                />
+              </div>
+
+              {authError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#0057FF] hover:bg-[#0047db] text-white font-medium text-sm transition shadow-sm cursor-pointer flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+              >
+                {authLoading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>{authMode === 'login' ? 'Sign In' : 'Create Account'}</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="text-center text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+              {authMode === 'login' ? (
+                <span>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('register')
+                      setAuthError(null)
+                    }}
+                    className="text-[#0057FF] hover:underline font-medium cursor-pointer"
+                  >
+                    Register here
+                  </button>
+                </span>
+              ) : (
+                <span>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login')
+                      setAuthError(null)
+                    }}
+                    className="text-[#0057FF] hover:underline font-medium cursor-pointer"
+                  >
+                    Sign in here
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
