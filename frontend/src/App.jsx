@@ -178,9 +178,10 @@ function App() {
   const [errorMessage, setErrorMessage] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  // Text file upload states & ref (Day 6 feature)
+  // Document upload states & ref (Day 6 & Day 9 features)
   const fileInputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState(null)
   const [uploadNotice, setUploadNotice] = useState(null)
 
@@ -345,45 +346,63 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // File Upload Handlers (Day 6 feature)
-  const handleFileRead = (file) => {
+  // Multi-format Document Upload Handlers (.txt, .pdf) (Day 6 & Day 9 features)
+  const handleFileRead = async (file) => {
     if (!file) return
 
-    const isValidTextFile =
-      file.name.match(/\.(txt|text)$/i) || file.type === 'text/plain'
+    const isValidDoc =
+      file.name.match(/\.(txt|text|pdf)$/i) ||
+      file.type === 'text/plain' ||
+      file.type === 'application/pdf'
 
-    if (!isValidTextFile) {
-      setErrorMessage('Please upload a plain text file (.txt).')
+    if (!isValidDoc) {
+      setErrorMessage('Please upload a supported document (.txt or .pdf).')
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const content = e.target?.result || ''
-      if (!content.trim()) {
-        setErrorMessage('The uploaded file is empty.')
-        return
-      }
+    setIsExtractingDoc(true)
+    setErrorMessage(null)
 
-      if (content.length > charLimit) {
-        setText(content.slice(0, charLimit))
-        setUploadNotice(
-          `Imported "${file.name}" (truncated to ${charLimit} max characters).`
-        )
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await axios.post('/api/extract-text', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...getAuthHeaders(),
+        },
+      })
+
+      const data = response.data
+      setText(data.text)
+      setUploadedFileName(data.filename)
+
+      let notice = `Imported "${data.filename}"`
+      if (data.page_count > 1) {
+        notice += ` (${data.page_count} pages`
       } else {
-        setText(content)
-        setUploadNotice(`Imported "${file.name}" successfully.`)
+        notice += ` (${data.char_count} chars`
       }
-
-      setUploadedFileName(file.name)
+      if (data.truncated) {
+        notice += `, truncated to ${charLimit} max characters)`
+      } else {
+        notice += `)`
+      }
+      setUploadNotice(notice)
       setErrorMessage(null)
+    } catch (err) {
+      const detail =
+        err.response?.data?.detail || 'Failed to extract text from document.'
+      const statusCode = err.response?.status
+      setErrorMessage({
+        message: detail,
+        code: statusCode,
+        canRetry: false,
+      })
+    } finally {
+      setIsExtractingDoc(false)
     }
-
-    reader.onerror = () => {
-      setErrorMessage('Failed to read the file. Please try again.')
-    }
-
-    reader.readAsText(file)
   }
 
   const handleFileChange = (e) => {
@@ -722,24 +741,38 @@ function App() {
               </label>
 
               <div className="flex items-center gap-2">
-                {/* Hidden file input for .txt files */}
+                {/* Hidden file input for .txt and .pdf documents (Day 6 & Day 9 features) */}
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileChange}
-                  accept=".txt,.text,text/plain"
+                  accept=".txt,.text,.pdf,text/plain,application/pdf"
                   className="hidden"
                 />
 
-                {/* Upload text file button (Day 6 feature) */}
+                {/* Upload document button (Day 6 & Day 9 feature) */}
                 <button
                   type="button"
+                  disabled={isExtractingDoc}
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-[#0057FF] hover:text-[#0047db] flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0057FF]/10 hover:bg-[#0057FF]/15 border border-[#0057FF]/25 transition cursor-pointer font-medium"
-                  title="Upload a .txt text file"
+                  className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition font-medium ${
+                    isExtractingDoc
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                      : 'text-[#0057FF] hover:text-[#0047db] bg-[#0057FF]/10 hover:bg-[#0057FF]/15 border border-[#0057FF]/25 cursor-pointer'
+                  }`}
+                  title="Upload a .txt or .pdf document"
                 >
-                  <Upload className="w-3.5 h-3.5" />
-                  Upload .txt
+                  {isExtractingDoc ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Extracting...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload Document (.txt, .pdf)
+                    </>
+                  )}
                 </button>
 
                 {/* Clear input button */}
@@ -774,7 +807,7 @@ function App() {
                   if (errorMessage) setErrorMessage(null)
                   if (uploadNotice) setUploadNotice(null)
                 }}
-                placeholder="Type or paste your text here, or drag and drop a .txt file..."
+                placeholder="Type or paste your text here, or drag and drop a .txt or .pdf document..."
                 className="w-full bg-[#F8F7F4]/60 border border-slate-200 rounded-xl p-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0057FF] focus:border-transparent transition resize-y"
               />
 
@@ -782,7 +815,7 @@ function App() {
               {isDragging && (
                 <div className="absolute inset-0 bg-white/95 border-2 border-dashed border-[#0057FF] rounded-xl flex flex-col items-center justify-center gap-2 pointer-events-none text-[#0057FF] text-sm">
                   <Upload className="w-8 h-8 animate-bounce text-[#0057FF]" />
-                  <span className="font-medium">Drop your .txt file here to import text</span>
+                  <span className="font-medium">Drop your .txt or .pdf document here to extract text</span>
                 </div>
               )}
             </div>
@@ -1347,7 +1380,7 @@ function App() {
             Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
           <p className="text-slate-400">
-            Day 8 Completed: User Accounts & Authentication (PDF Section 17 & 25 Level 2).
+            Day 9 Completed: Multi-format Document Upload & Text Extraction (PDF Section 17).
           </p>
         </footer>
 
