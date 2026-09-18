@@ -28,6 +28,8 @@ import {
   LogIn,
   LogOut,
   Lock,
+  BookOpen,
+  ExternalLink,
 } from 'lucide-react'
 
 // Initial fallback voices while fetching from API
@@ -1375,12 +1377,38 @@ function App() {
         </section>
 
         {/* Footer */}
-        <footer className="text-center text-xs text-slate-500 space-y-1">
+        <footer className="text-center text-xs text-slate-500 space-y-2">
           <p>
             Text-to-Speech Application • Project Submission Deadline: <strong>Sept 21, 2026</strong>
           </p>
+          <div className="flex items-center justify-center gap-3 text-slate-600">
+            <a
+              href="/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 hover:text-[#0057FF] transition"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Swagger API Docs</span>
+              <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+            </a>
+            <span>•</span>
+            <a
+              href="/redoc"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 hover:text-[#0057FF] transition"
+            >
+              <span>ReDoc</span>
+              <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+            </a>
+            <span>•</span>
+            <span className="inline-flex items-center gap-1 text-[#0057FF] font-medium">
+              <span>Postman Collection (v2.1)</span>
+            </span>
+          </div>
           <p className="text-slate-400">
-            Day 9 Completed: Multi-format Document Upload & Text Extraction (PDF Section 17).
+            Day 10 Completed: Postman Collection & API Documentation Deliverable (PDF Section 24).
           </p>
         </footer>
 
