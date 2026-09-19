@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import AudioPlayer from './components/AudioPlayer'
 import {
+  Play,
   Volume2,
   Sparkles,
   Server,
@@ -1074,55 +1076,20 @@ function App() {
             </div>
 
             {generatedAudio ? (
-              <div className="bg-[#F8F7F4]/90 border border-[#0057FF]/20 rounded-xl p-4 space-y-3">
-                <audio
-                  ref={audioRef}
-                  controls
-                  className="w-full h-10 rounded-lg focus:outline-none"
-                  src={generatedAudio.audio_url}
-                >
-                  Your browser does not support audio playback.
-                </audio>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200/80 text-xs text-slate-600">
-                  <div className="flex items-center gap-2">
-                    <span>Voice: <strong className="text-slate-800">{generatedAudio.voice}</strong></span>
-                    <span>•</span>
-                    <span>{generatedAudio.char_count} chars</span>
-                    <span>•</span>
-                    <span>{generatedAudio.word_count} words</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleCopy}
-                      className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 flex items-center gap-1.5 transition cursor-pointer shadow-sm font-medium"
-                      title="Copy direct audio URL"
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-700">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Copy Link</span>
-                        </>
-                      )}
-                    </button>
-
-                    <a
-                      href={generatedAudio.audio_url}
-                      download={generatedAudio.filename}
-                      className="px-3 py-1.5 rounded-lg bg-[#0057FF] hover:bg-[#0047db] text-white font-medium flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download</span>
-                    </a>
-                  </div>
-                </div>
-              </div>
+              <AudioPlayer
+                src={generatedAudio.audio_url}
+                filename={generatedAudio.filename}
+                metadata={{
+                  voice: generatedAudio.voice,
+                  charCount: generatedAudio.char_count,
+                  wordCount: generatedAudio.word_count,
+                  fileSize: generatedAudio.file_size_bytes,
+                  audioFormat: generatedAudio.audio_format || 'mp3',
+                }}
+                onCopy={handleCopy}
+                copied={copied}
+                autoPlay={true}
+              />
             ) : (
               <div className="bg-[#F8F7F4]/60 border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
                 <Volume2 className="w-7 h-7 text-slate-400" />
@@ -1332,8 +1299,27 @@ function App() {
                       Your browser does not support audio playback.
                     </audio>
 
-                    {/* Actions: Load Text, Copy Link, Download */}
+                    {/* Actions: Play in Player, Load Text, Copy Link, Download */}
                     <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-200/80 text-xs">
+                      <button
+                        onClick={() => {
+                          setGeneratedAudio({
+                            audio_url: item.audio_url,
+                            filename: item.audio_url.split('/').pop() || 'history_audio.mp3',
+                            voice: item.voice,
+                            char_count: item.text.length,
+                            word_count: item.text.trim().split(/\s+/).length,
+                            audio_format: 'mp3',
+                          })
+                          window.scrollTo({ top: 0, behavior: 'smooth' })
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-[#0057FF]/10 hover:bg-[#0057FF]/20 text-[#0057FF] border border-[#0057FF]/25 shadow-xs flex items-center gap-1.5 transition cursor-pointer font-medium"
+                        title="Play in interactive audio player"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-[#0057FF]" />
+                        <span>Play</span>
+                      </button>
+
                       <button
                         onClick={() => handleUseHistoryText(item.text)}
                         className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 shadow-sm flex items-center gap-1.5 transition cursor-pointer font-medium"
@@ -1408,7 +1394,7 @@ function App() {
             </span>
           </div>
           <p className="text-slate-400">
-            Day 10 Completed: Postman Collection & API Documentation Deliverable (PDF Section 24).
+            Day 11 & 12 Completed: Audio Return & Custom Interactive Audio Player Playback (PDF Section 4.5 & 21).
           </p>
         </footer>
 

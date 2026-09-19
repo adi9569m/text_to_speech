@@ -181,6 +181,7 @@ class TTSService:
             volume=valid_volume,
         )
         await tts.save(str(filepath))
+        file_size = os.path.getsize(filepath) if filepath.exists() else 0
 
         return {
             "success": True,
@@ -190,5 +191,7 @@ class TTSService:
             "text_length": len(clean_text),
             "char_count": len(clean_text),
             "word_count": len(clean_text.split()),
+            "file_size_bytes": file_size,
+            "audio_format": "mp3",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

@@ -19,6 +19,8 @@ class TTSGenerateResponse(BaseModel):
     text_length: int
     char_count: int
     word_count: int
+    file_size_bytes: Optional[int] = None
+    audio_format: Optional[str] = "mp3"
     created_at: str
 
 

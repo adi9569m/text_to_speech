@@ -7,8 +7,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
@@ -55,6 +56,27 @@ app.include_router(tts.router, prefix="/api", tags=["TTS"])
 app.include_router(history.router, prefix="/api", tags=["History"])
 app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 app.include_router(documents.router, prefix="/api", tags=["Documents"])
+
+
+@app.get("/api/audio/{filename}", tags=["TTS"], summary="Stream generated audio file")
+async def stream_audio(filename: str):
+    """Stream generated audio file with range requests support (Day 11 & Day 12 feature)."""
+    # Prevent path traversal attacks
+    safe_filename = Path(filename).name
+    filepath = AUDIO_DIR / safe_filename
+
+    if not filepath.exists() or not filepath.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Audio file '{safe_filename}' not found.",
+        )
+
+    return FileResponse(
+        path=filepath,
+        media_type="audio/mpeg",
+        filename=safe_filename,
+        headers={"Accept-Ranges": "bytes"},
+    )
 
 
 @app.get("/api/health", tags=["Health"])
