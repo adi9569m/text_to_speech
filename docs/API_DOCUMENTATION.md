@@ -1,12 +1,10 @@
-# Full-Stack Text-to-Speech Application — API Documentation
-
-> **Project Deliverable** per Section 24 (*"Final Project Deliverables: 1. Source code, 2. GitHub repository, 3. README documentation, 4. Database schema, 5. API documentation, 8. Postman collection"*) of `Python -Text-to-Speech Application.pdf`.
+# VoiceFlow — API Documentation
 
 ---
 
 ## 1. System Architecture & Overview
 
-The application is a full-stack, decoupled architecture comprising:
+VoiceFlow is a full-stack text-to-speech platform featuring a decoupled architecture:
 - **Frontend**: React 19 SPA built with Vite and Tailwind CSS (light theme with `#0057FF` and `#F8F7F4`).
 - **Backend**: Python FastAPI asynchronous REST API.
 - **Speech Engine**: Microsoft Neural Edge-TTS service generating high-fidelity MP3 speech with real-time rate, pitch, and volume adjustments.
@@ -45,7 +43,7 @@ flowchart LR
 
 ## 3. Authentication & Security Flow
 
-The API supports both **Guest Sessions** and **Authenticated User Accounts** (PDF Section 17 & 25 Level 2):
+The API supports both **Guest Sessions** and **Authenticated User Accounts**:
 1. **Unauthenticated (Guest)**: Requests without an `Authorization` header interact with public history records (`user_id = NULL`).
 2. **Authenticated (User)**: Pass `Authorization: Bearer <session_token>` in the request header. Generated speech and history records are strictly scoped to the authenticated user account.
 
@@ -170,6 +168,7 @@ Converts input text into neural speech audio with customization parameters.
 - **Error Responses**:
   - `400 Bad Request`: Whitespace-only text or invalid voice name.
   - `422 Unprocessable Entity`: Text missing or exceeds 1,000 characters.
+  - `429 Too Many Requests`: Rate limit exceeded (>30 requests per minute).
   - `503 Service Unavailable`: Upstream TTS engine unreachable.
 
 ---
@@ -177,29 +176,107 @@ Converts input text into neural speech audio with customization parameters.
 ### 4.4 Multi-Format Document Text Extraction
 
 #### `POST /api/extract-text`
-Accepts `.txt` and `.pdf` files, extracts textual content, normalizes whitespace, and truncates to 1,000 characters.
+Accepts `.txt`, `.pdf`, and `.docx` files, extracts textual content, normalizes whitespace, and truncates to 1,000 characters.
 
 - **Authentication**: None (Public)
 - **Content-Type**: `multipart/form-data`
 - **Form Field**:
-  - `file`: Binary file upload (`.txt` or `.pdf`)
+  - `file`: Binary file upload (`.txt`, `.pdf`, or `.docx`)
 - **Response (200 OK)**:
   ```json
   {
     "success": true,
     "text": "Extracted document content...",
-    "filename": "lecture_notes.pdf",
+    "filename": "meeting_minutes.docx",
     "char_count": 850,
-    "page_count": 3,
+    "page_count": 1,
     "truncated": false
   }
   ```
 - **Error Responses**:
-  - `400 Bad Request`: Empty file, corrupt PDF, unsupported file type (e.g. `.exe`, `.png`), or document containing no extractable text.
+  - `400 Bad Request`: Empty file, corrupt document, unsupported file type, or document containing no extractable text.
 
 ---
 
-### 4.5 User Authentication (Level 2)
+### 4.5 Voice Preview Audio Sample
+
+#### `GET /api/voices/{voice_id}/sample`
+Retrieves or synthesizes a cached audio sample for quick auditioning of a voice before generating full text.
+
+- **Authentication**: None (Public)
+- **Response (200 OK)**:
+  ```json
+  {
+    "success": true,
+    "voice": "en-US-JennyNeural",
+    "name": "Jenny (Female)",
+    "language": "English (US)",
+    "sample_audio_url": "/audio/sample_en-US-JennyNeural.mp3"
+  }
+  ```
+
+---
+
+### 4.6 AI Text Enhancement
+
+#### `POST /api/ai/enhance`
+Enhances, rewrites, or condenses text for audio speech synthesis. Supports `grammar`, `summarize`, `conversational`, `formal`, and `bullet_to_script`.
+
+- **Authentication**: None (Public)
+- **Request Body (`application/json`)**:
+  ```json
+  {
+    "text": "um like this is a test ???",
+    "mode": "grammar"
+  }
+  ```
+- **Response (200 OK)**:
+  ```json
+  {
+    "success": true,
+    "mode": "grammar",
+    "original_text": "um like this is a test ???",
+    "enhanced_text": "This is a test?",
+    "char_count": 15,
+    "word_count": 4,
+    "changes_applied": [
+      "Normalized repeated question marks.",
+      "Removed vocal filler words for clean speech narration."
+    ]
+  }
+  ```
+
+---
+
+### 4.7 Analytics & Usage Metrics
+
+#### `GET /api/analytics`
+Returns aggregate platform statistics including total syntheses, character counts, popular voices, and user counts.
+
+- **Authentication**: None (Public)
+- **Response (200 OK)**:
+  ```json
+  {
+    "success": true,
+    "total_generations": 42,
+    "total_characters_synthesized": 15200,
+    "total_words_synthesized": 2350,
+    "total_favorites": 8,
+    "total_registered_users": 5,
+    "top_voices": [
+      { "voice": "en-US-JennyNeural", "count": 18 },
+      { "voice": "hi-IN-SwaraNeural", "count": 12 }
+    ],
+    "top_languages": [
+      { "language": "English (US)", "count": 22 },
+      { "language": "Hindi (India)", "count": 14 }
+    ]
+  }
+  ```
+
+---
+
+### 4.5 User Authentication
 
 #### `POST /api/auth/register`
 Creates a new user account with unique username and PBKDF2 hashed password.

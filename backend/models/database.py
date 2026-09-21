@@ -21,7 +21,7 @@ Base = declarative_base()
 
 
 def init_db():
-    """Initialize database tables and ensure Day 5 is_favorite and Day 8 user_id columns exist."""
+    """Initialize database tables and ensure required columns exist."""
     # Ensure models are loaded onto Base
     from backend.models.history import AudioHistory  # noqa: F401
     from backend.models.user import User  # noqa: F401
@@ -36,6 +36,13 @@ def init_db():
                 conn.commit()
             if columns and "user_id" not in columns:
                 conn.execute(text("ALTER TABLE audio_history ADD COLUMN user_id INTEGER DEFAULT NULL"))
+                conn.commit()
+
+            # Ensure users table has name column
+            res_users = conn.execute(text("PRAGMA table_info(users)"))
+            user_columns = [row[1] for row in res_users.fetchall()]
+            if user_columns and "name" not in user_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN name VARCHAR(100) DEFAULT NULL"))
                 conn.commit()
         except Exception:
             pass

@@ -22,6 +22,37 @@ def test_user_register_success():
     assert "id" in data["user"]
 
 
+def test_user_register_with_name():
+    """Verify registration and login with an optional full name."""
+    unique_user = f"named_{uuid.uuid4().hex[:8]}"
+    full_name = "Alex Mercer"
+    payload = {
+        "username": unique_user,
+        "name": full_name,
+        "password": "securepassword123",
+    }
+    reg_res = client.post("/api/auth/register", json=payload)
+    assert reg_res.status_code == 201
+    reg_data = reg_res.json()
+    assert reg_data["user"]["name"] == full_name
+    assert full_name in reg_data["message"]
+    token = reg_data["token"]
+
+    # Verify login returns name
+    login_res = client.post(
+        "/api/auth/login",
+        json={"username": unique_user, "password": "securepassword123"},
+    )
+    assert login_res.status_code == 200
+    assert login_res.json()["user"]["name"] == full_name
+    assert full_name in login_res.json()["message"]
+
+    # Verify /me returns name
+    me_res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_res.status_code == 200
+    assert me_res.json()["name"] == full_name
+
+
 def test_user_register_validation():
     """Verify register rejects invalid inputs and duplicate usernames."""
     # Password too short (< 6 chars) -> 422 Unprocessable Entity
@@ -166,3 +197,80 @@ def test_user_history_scoping():
     texts2 = [item["text"] for item in h2.json()["items"]]
     assert "User 2 exclusive audio text." in texts2
     assert "User 1 exclusive audio text." not in texts2
+
+
+def test_user_analytics_scoping():
+    """Verify speech analytics are isolated per authenticated user."""
+    user_alpha = f"alpha_{uuid.uuid4().hex[:8]}"
+    user_beta = f"beta_{uuid.uuid4().hex[:8]}"
+
+    # Register Alpha
+    res_a = client.post(
+        "/api/auth/register",
+        json={"username": user_alpha, "name": "Alpha User", "password": "password123"},
+    )
+    token_a = res_a.json()["token"]
+
+    # Register Beta
+    res_b = client.post(
+        "/api/auth/register",
+        json={"username": user_beta, "name": "Beta User", "password": "password123"},
+    )
+    token_b = res_b.json()["token"]
+
+    # Alpha generates 1 clip
+    gen_a = client.post(
+        "/api/tts",
+        json={"text": "Alpha generated audio content."},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert gen_a.status_code == 200
+
+    # Beta generates 2 clips
+    gen_b1 = client.post(
+        "/api/tts",
+        json={"text": "Beta first generated phrase."},
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert gen_b1.status_code == 200
+    gen_b2 = client.post(
+        "/api/tts",
+        json={"text": "Beta second generated phrase."},
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert gen_b2.status_code == 200
+
+    # Check Alpha's personal analytics
+    res_analytics_a = client.get(
+        "/api/analytics",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert res_analytics_a.status_code == 200
+    data_a = res_analytics_a.json()
+    assert data_a["is_personal"] is True
+    assert data_a["user"]["username"] == user_alpha
+    assert data_a["total_generations"] == 1
+    assert data_a["total_characters_synthesized"] == len("Alpha generated audio content.")
+
+    # Check Beta's personal analytics
+    res_analytics_b = client.get(
+        "/api/analytics",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert res_analytics_b.status_code == 200
+    data_b = res_analytics_b.json()
+    assert data_b["is_personal"] is True
+    assert data_b["user"]["username"] == user_beta
+    assert data_b["total_generations"] == 2
+    assert data_b["total_characters_synthesized"] == len("Beta first generated phrase.") + len("Beta second generated phrase.")
+
+    # Check Global analytics scope
+    res_global = client.get(
+        "/api/analytics?scope=global",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert res_global.status_code == 200
+    data_global = res_global.json()
+    assert data_global["is_personal"] is False
+    assert data_global["total_generations"] >= 3
+

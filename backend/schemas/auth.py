@@ -3,6 +3,7 @@ from typing import Optional
 
 
 class UserRegisterRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=100, description="Full name or display name")
     username: str = Field(..., min_length=3, max_length=50, description="Unique username (3-50 chars)")
     password: str = Field(..., min_length=6, max_length=100, description="Account password (min 6 chars)")
 
@@ -15,6 +16,7 @@ class UserLoginRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
+    name: Optional[str] = None
     created_at: str
     model_config = {"from_attributes": True}
 

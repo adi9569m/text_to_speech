@@ -12,42 +12,37 @@ import {
   Check,
   Music,
   Gauge,
-  Sparkles,
+  Star,
+  FileAudio,
 } from 'lucide-react'
 
-/**
- * Custom Interactive Audio Player Component (Day 11 & Day 12 Features)
- * Fulfills Section 4.5 of Python -Text-to-Speech Application.pdf:
- * Play, Pause, Seek (timeline scrubbing), and Volume adjustment.
- */
 export default function AudioPlayer({
   src,
   filename,
   metadata = {},
   onCopy,
   copied = false,
-  autoPlay = true,
+  autoPlay = false,
+  isFavorite = false,
+  onToggleFavorite,
 }) {
   const audioRef = useRef(null)
 
-  // Player state
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1.0)
   const [isMuted, setIsMuted] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1.0)
-  const [isLoading, setIsLoading] = useState(false)
+  const [downloadFormat, setDownloadFormat] = useState('mp3')
 
   const SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0]
 
-  // Initialize and load audio source
   useEffect(() => {
     if (!audioRef.current || !src) return
 
     setIsPlaying(false)
     setCurrentTime(0)
-    setIsLoading(true)
 
     const audio = audioRef.current
     audio.src = src
@@ -58,29 +53,23 @@ export default function AudioPlayer({
       if (playPromise !== undefined) {
         playPromise
           .then(() => setIsPlaying(true))
-          .catch(() => {
-            // Autoplay blocked by browser policy; user can click play
-            setIsPlaying(false)
-          })
+          .catch(() => setIsPlaying(false))
       }
     }
   }, [src, autoPlay])
 
-  // Synchronize playback rate
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.playbackRate = playbackRate
     }
   }, [playbackRate])
 
-  // Synchronize volume and mute
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume
     }
   }, [volume, isMuted])
 
-  // Audio lifecycle event handlers
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime)
@@ -90,7 +79,6 @@ export default function AudioPlayer({
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
       setDuration(audioRef.current.duration || 0)
-      setIsLoading(false)
     }
   }
 
@@ -102,7 +90,6 @@ export default function AudioPlayer({
     }
   }
 
-  // Play / Pause toggle
   const togglePlay = () => {
     if (!audioRef.current) return
     if (isPlaying) {
@@ -116,7 +103,6 @@ export default function AudioPlayer({
     }
   }
 
-  // Seek timeline scrubber handler
   const handleSeek = (e) => {
     const nextTime = parseFloat(e.target.value)
     setCurrentTime(nextTime)
@@ -125,7 +111,6 @@ export default function AudioPlayer({
     }
   }
 
-  // Jump forwards or backwards by N seconds
   const handleSkip = (seconds) => {
     if (!audioRef.current) return
     const next = Math.min(Math.max(0, audioRef.current.currentTime + seconds), duration)
@@ -133,19 +118,16 @@ export default function AudioPlayer({
     setCurrentTime(next)
   }
 
-  // Volume slider handler
   const handleVolumeChange = (e) => {
     const nextVol = parseFloat(e.target.value)
     setVolume(nextVol)
     if (isMuted && nextVol > 0) setIsMuted(false)
   }
 
-  // Toggle Mute
   const toggleMute = () => {
     setIsMuted((prev) => !prev)
   }
 
-  // Format seconds to MM:SS
   const formatTime = (secs) => {
     if (isNaN(secs) || secs < 0) return '00:00'
     const mins = Math.floor(secs / 60)
@@ -153,7 +135,6 @@ export default function AudioPlayer({
     return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`
   }
 
-  // Format file size in bytes to KB/MB
   const formatBytes = (bytes) => {
     if (!bytes || isNaN(bytes)) return null
     if (bytes < 1024) return `${bytes} B`
@@ -164,63 +145,59 @@ export default function AudioPlayer({
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-sm space-y-5">
+    <div className="bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 text-slate-800">
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
-        onWaiting={() => setIsLoading(true)}
-        onCanPlay={() => setIsLoading(false)}
         preload="metadata"
       />
 
-      {/* Top Header: Playing status & Equalizer */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-[#0057FF]/10 text-[#0057FF] border border-[#0057FF]/20">
-            <Music className="w-4 h-4" />
+      {/* Header Info & Animated Equalizer */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-center justify-center shrink-0 shadow-2xs">
+            <Music className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-900">
-              {metadata.voice || 'Neural Speech Playback'}
-            </h4>
-            <p className="text-xs text-slate-500">
-              {metadata.charCount ? `${metadata.charCount} characters` : 'Audio output'}
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold text-slate-900">
+                {metadata.voice || 'Neural Speech Output'}
+              </h4>
+              {metadata.language && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                  {metadata.language}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              {metadata.charCount ? `${metadata.charCount} characters` : 'Ready to play'}
               {metadata.wordCount ? ` • ${metadata.wordCount} words` : ''}
               {metadata.fileSize ? ` • ${formatBytes(metadata.fileSize)}` : ''}
-              {metadata.audioFormat ? ` • ${metadata.audioFormat.toUpperCase()}` : ''}
             </p>
           </div>
         </div>
 
-        {/* Animated Equalizer Visualizer */}
-        <div className="flex items-end gap-1 h-5 px-3 py-1 bg-[#F8F7F4] border border-slate-200 rounded-lg">
-          <span
-            className={`w-1 bg-[#0057FF] rounded-full transition-all duration-300 ${
-              isPlaying ? 'h-4 animate-pulse' : 'h-1.5 opacity-40'
-            }`}
-          />
-          <span
-            className={`w-1 bg-[#0057FF] rounded-full transition-all duration-300 ${
-              isPlaying ? 'h-3 animate-pulse delay-75' : 'h-2 opacity-40'
-            }`}
-          />
-          <span
-            className={`w-1 bg-[#0057FF] rounded-full transition-all duration-300 ${
-              isPlaying ? 'h-5 animate-pulse delay-150' : 'h-1 opacity-40'
-            }`}
-          />
-          <span
-            className={`w-1 bg-[#0057FF] rounded-full transition-all duration-300 ${
-              isPlaying ? 'h-2.5 animate-pulse delay-100' : 'h-1.5 opacity-40'
-            }`}
-          />
+        {/* Dynamic Equalizer Visualizer */}
+        <div className="flex items-end gap-1 h-6 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl">
+          {[0.6, 0.9, 0.4, 1.0, 0.7, 0.5, 0.8].map((factor, idx) => (
+            <span
+              key={idx}
+              className={`w-1 bg-gradient-to-t from-blue-950 to-blue-700 rounded-full transition-all duration-200 ${
+                isPlaying ? 'animate-pulse' : 'opacity-30'
+              }`}
+              style={{
+                height: isPlaying ? `${Math.max(4, factor * 20)}px` : '4px',
+                animationDelay: `${idx * 100}ms`,
+              }}
+            />
+          ))}
         </div>
       </div>
 
-      {/* Timeline Scrubber (Seek) */}
+      {/* Scrub Timeline */}
       <div className="space-y-1.5">
         <div className="relative flex items-center group">
           <input
@@ -230,42 +207,40 @@ export default function AudioPlayer({
             step="0.01"
             value={currentTime}
             onChange={handleSeek}
-            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#0057FF] focus:outline-none"
+            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-900 focus:outline-none"
             style={{
-              background: `linear-gradient(to right, #0057FF ${progressPercent}%, #e2e8f0 ${progressPercent}%)`,
+              background: `linear-gradient(to right, #1E3A8A ${progressPercent}%, #e2e8f0 ${progressPercent}%)`,
             }}
             title="Seek playback position"
           />
         </div>
 
-        <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 px-0.5">
+        <div className="flex items-center justify-between text-xs font-mono text-slate-500 px-0.5">
           <span>{formatTime(currentTime)}</span>
           <span>{formatTime(duration)}</span>
         </div>
       </div>
 
-      {/* Main Playback & Audio Controls */}
+      {/* Primary Workstation Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-        {/* Left: Play/Pause, Rewind, Fast-Forward */}
+        {/* Play / Skip Buttons */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Rewind 5s */}
           <button
             type="button"
             onClick={() => handleSkip(-5)}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+            className="p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
             title="Rewind 5 seconds"
           >
             <RotateCcw className="w-4 h-4" />
           </button>
 
-          {/* Play / Pause Primary Button */}
           <button
             type="button"
             onClick={togglePlay}
-            className={`w-11 h-11 rounded-full flex items-center justify-center text-white transition shadow-md cursor-pointer ${
+            className={`w-12 h-12 rounded-full flex items-center justify-center text-white transition shadow-md cursor-pointer ${
               isPlaying
-                ? 'bg-[#0057FF] hover:bg-[#0047db] shadow-[#0057FF]/30 scale-105'
-                : 'bg-[#0057FF] hover:bg-[#0047db] shadow-[#0057FF]/20 hover:scale-105'
+                ? 'bg-blue-900 hover:bg-blue-950 hover:scale-105 shadow-blue-900/30 ring-4 ring-blue-900/20'
+                : 'bg-blue-900 hover:bg-blue-950 shadow-blue-900/25 hover:scale-105'
             }`}
             title={isPlaying ? 'Pause' : 'Play'}
           >
@@ -276,27 +251,26 @@ export default function AudioPlayer({
             )}
           </button>
 
-          {/* Fast-Forward 5s */}
           <button
             type="button"
             onClick={() => handleSkip(5)}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
-            title="Forward 5 seconds"
+            className="p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+            title="Fast forward 5 seconds"
           >
             <RotateCw className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Center: Volume Control */}
-        <div className="flex items-center gap-2 bg-[#F8F7F4] px-3 py-1.5 rounded-xl border border-slate-200">
+        {/* Volume & Mute */}
+        <div className="flex items-center gap-2.5 bg-slate-50 px-3.5 py-1.5 rounded-xl border border-slate-200">
           <button
             type="button"
             onClick={toggleMute}
-            className="text-slate-600 hover:text-[#0057FF] transition cursor-pointer"
+            className="text-slate-500 hover:text-indigo-600 transition cursor-pointer"
             title={isMuted ? 'Unmute' : 'Mute'}
           >
             {isMuted || volume === 0 ? (
-              <VolumeX className="w-4 h-4 text-rose-500" />
+              <VolumeX className="w-4 h-4 text-rose-600" />
             ) : volume < 0.5 ? (
               <Volume1 className="w-4 h-4" />
             ) : (
@@ -311,7 +285,7 @@ export default function AudioPlayer({
             step="0.05"
             value={isMuted ? 0 : volume}
             onChange={handleVolumeChange}
-            className="w-16 sm:w-20 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#0057FF] focus:outline-none"
+            className="w-16 sm:w-20 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-900 focus:outline-none"
             title={`Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
           />
 
@@ -320,10 +294,10 @@ export default function AudioPlayer({
           </span>
         </div>
 
-        {/* Right: Playback Speed Chips */}
-        <div className="flex items-center gap-1 bg-[#F8F7F4] p-1 rounded-xl border border-slate-200">
-          <span className="text-[10px] uppercase font-bold text-slate-400 px-1.5 flex items-center gap-1">
-            <Gauge className="w-3 h-3 text-[#0057FF]" />
+        {/* Speed Chips */}
+        <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+          <span className="text-[10px] uppercase font-bold text-slate-500 px-1.5 flex items-center gap-1">
+            <Gauge className="w-3 h-3 text-blue-900" />
             Speed
           </span>
           {SPEED_OPTIONS.map((rate) => (
@@ -333,7 +307,7 @@ export default function AudioPlayer({
               onClick={() => setPlaybackRate(rate)}
               className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 playbackRate === rate
-                  ? 'bg-[#0057FF] text-white shadow-xs'
+                  ? 'bg-blue-900 text-white shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
@@ -343,41 +317,75 @@ export default function AudioPlayer({
         </div>
       </div>
 
-      {/* Bottom Action Footer: Copy Link and Download File */}
+      {/* Actions Footer */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
-        <span className="text-slate-500 font-mono text-[11px] truncate max-w-xs">
+        <span className="text-slate-500 font-mono text-[11px] truncate max-w-xs flex items-center gap-1.5">
+          <FileAudio className="w-3.5 h-3.5 text-blue-900 shrink-0" />
           {filename || 'audio.mp3'}
         </span>
 
         <div className="flex items-center gap-2">
+          {/* Favorite Toggle Button */}
+          {onToggleFavorite && (
+            <button
+              type="button"
+              onClick={onToggleFavorite}
+              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition cursor-pointer font-semibold ${
+                isFavorite
+                  ? 'bg-amber-50 border-amber-300 text-amber-800'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs'
+              }`}
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Star className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+              <span>{isFavorite ? 'Favorited' : 'Favorite'}</span>
+            </button>
+          )}
+
+          {/* Copy Direct Link Button */}
           {onCopy && (
             <button
               type="button"
               onClick={onCopy}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 flex items-center gap-1.5 transition cursor-pointer shadow-xs font-medium"
-              title="Copy audio URL"
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 flex items-center gap-1.5 transition cursor-pointer shadow-2xs font-semibold"
+              title="Copy audio stream URL"
             >
               {copied ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-emerald-700 font-semibold">Copied</span>
+                  <span className="text-emerald-700">Copied</span>
                 </>
               ) : (
                 <>
-                  <Copy className="w-3.5 h-3.5 text-slate-500" />
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
                   <span>Copy Link</span>
                 </>
               )}
             </button>
           )}
 
+          {/* Format selector (MP3 / WAV) */}
+          <select
+            value={downloadFormat}
+            onChange={(e) => setDownloadFormat(e.target.value)}
+            className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 font-bold focus:outline-none cursor-pointer shadow-2xs"
+          >
+            <option value="mp3">MP3</option>
+            <option value="wav">WAV</option>
+          </select>
+
+          {/* Download Button */}
           <a
             href={src}
-            download={filename || 'generated-speech.mp3'}
-            className="px-3.5 py-1.5 rounded-xl bg-[#0057FF] hover:bg-[#0047db] text-white font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-sm shadow-[#0057FF]/20"
+            download={
+              filename
+                ? filename.replace(/\.mp3$/, `.${downloadFormat}`)
+                : `audio.${downloadFormat}`
+            }
+            className="px-3.5 py-1.5 rounded-xl bg-blue-900 hover:bg-blue-950 text-white font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download MP3</span>
+            <span>Download</span>
           </a>
         </div>
       </div>

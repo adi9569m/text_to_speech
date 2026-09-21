@@ -27,10 +27,11 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     "/register",
     response_model=AuthResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Register a new user account (PDF Section 17 & 25)",
+    summary="Register a new user account",
 )
 def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
     clean_username = payload.username.strip()
+    clean_name = payload.name.strip() if payload.name and payload.name.strip() else None
     if len(clean_username) < 3:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -51,28 +52,30 @@ def register(payload: UserRegisterRequest, db: Session = Depends(get_db)):
         )
 
     pwd_hash = hash_password(payload.password)
-    new_user = User(username=clean_username, password_hash=pwd_hash)
+    new_user = User(username=clean_username, name=clean_name, password_hash=pwd_hash)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
     token = create_access_token(user_id=new_user.id, username=new_user.username)
+    display_label = new_user.name or new_user.username
     return {
         "success": True,
         "user": {
             "id": new_user.id,
             "username": new_user.username,
+            "name": new_user.name,
             "created_at": new_user.created_at.isoformat() if new_user.created_at else "",
         },
         "token": token,
-        "message": f"Welcome, {new_user.username}! Account created successfully.",
+        "message": f"Welcome, {display_label}! Account created successfully.",
     }
 
 
 @router.post(
     "/login",
     response_model=AuthResponse,
-    summary="Log in with username and password (PDF Section 17 & 25)",
+    summary="Log in with username and password",
 )
 def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
     clean_username = payload.username.strip()
@@ -84,15 +87,17 @@ def login(payload: UserLoginRequest, db: Session = Depends(get_db)):
         )
 
     token = create_access_token(user_id=user.id, username=user.username)
+    display_label = user.name or user.username
     return {
         "success": True,
         "user": {
             "id": user.id,
             "username": user.username,
+            "name": user.name,
             "created_at": user.created_at.isoformat() if user.created_at else "",
         },
         "token": token,
-        "message": f"Welcome back, {user.username}!",
+        "message": f"Welcome back, {display_label}!",
     }
 
 
@@ -105,5 +110,6 @@ def get_me(user: User = Depends(get_current_user)):
     return {
         "id": user.id,
         "username": user.username,
+        "name": user.name,
         "created_at": user.created_at.isoformat() if user.created_at else "",
     }

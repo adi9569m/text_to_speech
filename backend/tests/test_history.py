@@ -20,7 +20,7 @@ def test_speech_generation_persists_to_history():
 
     # 3. Generate speech
     payload = {
-        "text": "Testing history persistence for Day 3.",
+        "text": "Testing history persistence for speech generation.",
         "language": "English (US)",
         "voice": "en-US-GuyNeural",
         "rate": "+0%",
@@ -36,7 +36,7 @@ def test_speech_generation_persists_to_history():
     data2 = history_res2.json()
     assert data2["total"] >= 1
     item = data2["items"][0]
-    assert item["text"] == "Testing history persistence for Day 3."
+    assert item["text"] == "Testing history persistence for speech generation."
     assert item["voice"] == "en-US-GuyNeural"
     assert item["audio_url"] == gen_data["audio_url"]
     assert "created_at" in item
@@ -97,10 +97,10 @@ def test_clear_all_history():
 
 
 def test_toggle_history_favorite():
-    """Verify toggling favorite status and filtering by favorites (Day 5 feature)."""
+    """Verify toggling favorite status and filtering by favorites."""
     # 1. Generate speech
     payload = {
-        "text": "Favorite item test for Day 5.",
+        "text": "Favorite item test for speech history.",
         "language": "English (US)",
         "voice": "en-US-JennyNeural",
     }

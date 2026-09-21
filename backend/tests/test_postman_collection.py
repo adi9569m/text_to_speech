@@ -18,7 +18,7 @@ def test_postman_collection_structure():
         data = json.load(f)
 
     assert "info" in data
-    assert data["info"]["name"] == "Text-to-Speech API"
+    assert data["info"]["name"] == "VoiceFlow API"
     assert "v2.1.0" in data["info"]["schema"]
 
     # Check variables

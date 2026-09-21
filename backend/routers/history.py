@@ -28,7 +28,7 @@ router = APIRouter(prefix="/history", tags=["History"])
 def get_history(
     skip: int = Query(default=0, ge=0, description="Number of records to skip"),
     limit: int = Query(default=50, ge=1, le=100, description="Max records to return"),
-    favorite_only: bool = Query(default=False, description="Filter favorites only (Day 5 feature)"),
+    favorite_only: bool = Query(default=False, description="Filter favorites only"),
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_optional_user),
 ):
@@ -50,7 +50,7 @@ def get_history(
 @router.patch(
     "/{history_id}/favorite",
     response_model=HistoryFavoriteResponse,
-    summary="Toggle favorite status of a history item (Day 5 feature)",
+    summary="Toggle favorite status of a history item",
 )
 def toggle_favorite(history_id: int, db: Session = Depends(get_db)):
     """Toggle the favorite status of a specific audio history item."""

@@ -6,13 +6,8 @@ from backend.models.database import Base
 class AudioHistory(Base):
     """
     AudioHistory model for storing past speech generations.
-    Matches Section 17 & 25 of the project specification:
-    - Text
-    - Language
-    - Voice
-    - Audio URL
-    - Created At
-    - Favorites (Day 5 feature)
+    Stores synthesized text, selected voice and language, audio URL,
+    favorite bookmark status, optional user ownership, and timestamp.
     """
     __tablename__ = "audio_history"
 

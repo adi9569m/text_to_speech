@@ -11,8 +11,8 @@ router = APIRouter()
 @router.post(
     "/extract-text",
     response_model=DocumentExtractResponse,
-    summary="Extract text from uploaded document (.txt, .pdf)",
-    description="Accepts TXT and PDF documents, extracts text content, standardizes whitespace, and truncates to 1000 chars.",
+    summary="Extract text from uploaded document (.txt, .pdf, .docx)",
+    description="Accepts TXT, PDF, and DOCX documents, extracts text content, standardizes whitespace, and truncates to 1000 chars.",
 )
 @router.post(
     "/documents/extract",
@@ -20,7 +20,7 @@ router = APIRouter()
     include_in_schema=False,
 )
 async def extract_text(file: UploadFile = File(...)):
-    """Extract and normalize text from an uploaded TXT or PDF document."""
+    """Extract and normalize text from an uploaded TXT, PDF, or DOCX document."""
     if not file or not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

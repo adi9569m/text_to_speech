@@ -4,18 +4,22 @@ import re
 from pathlib import Path
 from typing import Any, Dict
 import pypdf
+try:
+    import docx
+except ImportError:
+    docx = None
 
 
 class DocumentService:
-    """Service for extracting and normalizing text from uploaded documents (TXT, PDF)."""
+    """Service for extracting and normalizing text from uploaded documents (TXT, PDF, DOCX)."""
 
     MAX_CHARACTERS = 1000
-    SUPPORTED_EXTENSIONS = {".txt", ".text", ".pdf"}
+    SUPPORTED_EXTENSIONS = {".txt", ".text", ".pdf", ".docx"}
 
     @classmethod
     def extract_text(cls, filename: str, content: bytes) -> Dict[str, Any]:
         """
-        Extract text from a file buffer (.txt or .pdf), normalize whitespace,
+        Extract text from a file buffer (.txt, .pdf, or .docx), normalize whitespace,
         and enforce the 1,000 character maximum limit.
         """
         if not content or len(content) == 0:
@@ -25,7 +29,7 @@ class DocumentService:
         ext = Path(filename).suffix.lower()
         if ext not in cls.SUPPORTED_EXTENSIONS:
             raise ValueError(
-                f"Unsupported file format: '{ext}'. Only .txt and .pdf files are supported."
+                f"Unsupported file format: '{ext}'. Supported formats are .txt, .pdf, and .docx."
             )
 
         raw_text = ""
@@ -70,6 +74,26 @@ class DocumentService:
                 raise ValueError(
                     f"Failed to read PDF document. The file may be damaged: {exc}"
                 )
+        elif ext == ".docx":
+            if docx is None:
+                raise ValueError("DOCX processing library is not installed on this system.")
+            try:
+                docx_stream = io.BytesIO(content)
+                doc = docx.Document(docx_stream)
+                doc_lines = []
+                for paragraph in doc.paragraphs:
+                    paragraph_text = paragraph.text.strip()
+                    if paragraph_text:
+                        doc_lines.append(paragraph_text)
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                        if row_cells:
+                            doc_lines.append(" - ".join(row_cells))
+                raw_text = "\n\n".join(doc_lines)
+                page_count = 1
+            except Exception as exc:
+                raise ValueError(f"Failed to read DOCX document. The file may be damaged: {exc}")
 
         # Normalize text and collapse excessive whitespace
         normalized_text = cls.normalize_text(raw_text)

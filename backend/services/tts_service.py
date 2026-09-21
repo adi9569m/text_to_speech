@@ -195,3 +195,26 @@ class TTSService:
             "audio_format": "mp3",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    @classmethod
+    async def get_voice_sample(cls, voice_id: str) -> Dict[str, Any]:
+        """Generate or retrieve a cached audio sample for quick voice preview."""
+        voice_info = next((v for v in CURATED_VOICES if v["id"] == voice_id), None)
+        if not voice_info:
+            raise ValueError(f"Invalid voice '{voice_id}'.")
+
+        sample_filename = f"sample_{voice_id}.mp3"
+        sample_path = AUDIO_DIR / sample_filename
+
+        if not sample_path.exists():
+            sample_text = f"Hello! This is a preview of the {voice_info['name']} voice."
+            tts = edge_tts.Communicate(text=sample_text, voice=voice_id)
+            await tts.save(str(sample_path))
+
+        return {
+            "success": True,
+            "voice": voice_id,
+            "name": voice_info["name"],
+            "language": voice_info["language"],
+            "sample_audio_url": f"{AUDIO_BASE_URL.rstrip('/')}/{sample_filename}",
+        }

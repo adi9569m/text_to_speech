@@ -9,21 +9,21 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from backend.models.database import Base, engine, init_db
-from backend.routers import tts, history, auth, documents
+from backend.routers import tts, history, auth, documents, ai, analytics
 
-# Initialize SQLite database tables and schema (Day 3, Day 5, & Day 8 features)
+# Initialize database tables and schema
 init_db()
 
 load_dotenv()
 
 app = FastAPI(
-    title="Text-to-Speech API",
-    description="Full-stack Text-to-Speech Application API powered by FastAPI and Neural TTS",
+    title="VoiceFlow API",
+    description="VoiceFlow Text-to-Speech Application API powered by FastAPI and Neural TTS",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -56,11 +56,13 @@ app.include_router(tts.router, prefix="/api", tags=["TTS"])
 app.include_router(history.router, prefix="/api", tags=["History"])
 app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 app.include_router(documents.router, prefix="/api", tags=["Documents"])
+app.include_router(ai.router, prefix="/api", tags=["AI Enhancement"])
+app.include_router(analytics.router, prefix="/api", tags=["Analytics"])
 
 
 @app.get("/api/audio/{filename}", tags=["TTS"], summary="Stream generated audio file")
 async def stream_audio(filename: str):
-    """Stream generated audio file with range requests support (Day 11 & Day 12 feature)."""
+    """Stream generated audio file with range requests support."""
     # Prevent path traversal attacks
     safe_filename = Path(filename).name
     filepath = AUDIO_DIR / safe_filename
@@ -84,9 +86,14 @@ async def health_check():
     return {"status": "ok"}
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_endpoint():
+    return Response(status_code=204)
+
+
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.getenv("PORT", 8000))
-    host = os.getenv("HOST", "0.0.0.0")
-    uvicorn.run("backend.main:app", host=host, port=port, reload=True)
+    host = os.getenv("HOST", "127.0.0.1")
+    uvicorn.run("backend.main:app", host=host, port=port, reload=True, app_dir=str(PROJECT_ROOT))

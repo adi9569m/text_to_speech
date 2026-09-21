@@ -42,7 +42,7 @@ def test_stream_audio_path_traversal_protection():
 def test_tts_response_includes_audio_metadata():
     """Verify that speech synthesis returns audio_format and file_size_bytes."""
     payload = {
-        "text": "Testing audio return metadata for Day 11.",
+        "text": "Testing audio return metadata and format.",
         "voice": "en-US-JennyNeural",
         "rate": "+0%",
         "pitch": "+0Hz",
